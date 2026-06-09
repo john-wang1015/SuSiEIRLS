@@ -1,0 +1,189 @@
+Run_Binary <- function(X, y, Z = NULL,
+                    family = binomial(link = "logit"),weight_cutoff=0.005,
+                    L, max.iter, min.iter, max.eps, susie.iter,pip.thres=5e-3,
+                    verbose = TRUE, n_threads = 1, coverage = 0.5,
+                    estimate_residual_variance = FALSE,scaled_prior_variance=0.5,
+                    residual_variance = 1, ...) {
+
+n = n_eff= length(y)
+p = ncol(X)
+
+# ============================================
+# Handle Z edge cases
+# ============================================
+if (is.null(Z)) {
+# Case: Z is NULL (no covariates)
+Z = matrix(nrow = n, ncol = 0)  # Create empty matrix with 0 columns
+ZI = matrix(1, nrow = n, ncol = 1)
+colnames(ZI) = "Intercept"
+
+} else {
+# Case: Z is not NULL
+if (is.null(dim(Z))) {
+# Z is a vector: convert to single-column matrix
+Z = matrix(Z, ncol = 1)
+}
+
+# Ensure Z has column names
+if (is.null(colnames(Z))) {
+colnames(Z) = paste0("Z", seq_len(ncol(Z)))
+}
+
+# Create ZI = [Intercept | Z]
+ZI = cbind(1, Z)
+colnames(ZI)[1] = "Intercept"
+}
+
+# ============================================
+# Initial GLM fit with covariates only
+# ============================================
+if (ncol(Z) == 0) {
+fit_final = glm(y ~ 1, family = family)
+} else {
+fit_final = glm(y ~ Z, family = family)
+}
+alpha = coef(fit_final)
+
+# Initialize tracking variables
+g = c()
+beta = rep(0, p)
+beta_prev = beta
+alpha_prev = alpha * 0
+
+# ============================================
+# Main iteration loop
+# ============================================
+for (iter in 1:max.iter) {
+beta_prev = beta
+alpha_prev = alpha
+
+## ===== Logistic (Bernoulli, n_i = 1) : PG  =====
+
+eta <- fit_final$linear.predictors
+y01 <- as.numeric(fit_final$y)
+eta_clip <- pmin(pmax(eta, -20), 20)
+omega <- ifelse(abs(eta_clip) < 1e-8, 0.25, 0.5 * tanh(eta_clip / 2) / eta_clip)
+z      <- (y01 - 0.5) / omega
+W_diag <- omega
+W_diag <- pmax(W_diag, 1e-8)
+n_eff <- (sum(W_diag))^2 / sum(W_diag^2)
+W_invsqrt <- sqrt(W_diag)
+tilde_y   <- z  * W_invsqrt
+tilde_X   <- X  * W_invsqrt
+tilde_Z   <- ZI * W_invsqrt
+
+# Projection: remove covariate effects
+ZtZ = matrixMultiply(t(tilde_Z), tilde_Z)
+Zinv = solve(ZtZ)
+Zinv = matrixMultiply(Zinv, t(tilde_Z))
+
+tilde_y = tilde_y - matrixVectorMultiply(tilde_Z, matrixVectorMultiply(Zinv, tilde_y))
+tilde_X = tilde_X - ProjectRes(A = tilde_X, B = tilde_Z, n_threads = n_threads)
+
+# Compute sufficient statistics for SuSiE
+XtX = blockwise_crossprod(tilde_X,n_threads = n_threads)
+Xty = matrixVectorMultiply(t(tilde_X), tilde_y)
+yty = sum(tilde_y^2)
+
+# Run SuSiE on projected data
+fitX <- susie_ss(
+XtX = XtX, Xty = Xty, yty = yty, n = max(n/2,n_eff), L = L,
+scaled_prior_variance = scaled_prior_variance,
+estimate_residual_variance = estimate_residual_variance,
+residual_variance = residual_variance,
+max_iter = susie.iter,
+estimate_prior_method = "EM",
+coverage = coverage,...
+)
+
+beta = coef(fitX)[-1]
+beta.cs=group.pip.filter(pip.summary=summary(fitX)$var,xQTL.cred.thres=coverage,xQTL.pip.thres=pip.thres)
+pip.alive=beta.cs$ind.keep
+beta[-pip.alive]=0
+
+# Extract credible sets using summary information
+CSdt <- summary(fitX)$vars
+cs_indices <- unique(CSdt$cs[CSdt$cs > 0])
+cs_indices=sort(cs_indices)
+if(length(cs_indices) == 0) {
+warning("No credible set detected at iteration ", iter)
+break
+}
+Alpha_filtered <- fitX$alpha * 0
+for(i in cs_indices) {
+vars_in_cs_i <- CSdt$variable[CSdt$cs == i]
+Alpha_filtered[i, vars_in_cs_i] <- fitX$alpha[i, vars_in_cs_i]
+}
+# Align within-CS SNP directions while preserving PIP weights.
+Alpha_filtered <- Alpha_filtered * sign(fitX$mu)
+XCS <- matrixMultiply(X, t(as.matrix(Alpha_filtered)))
+XCS <- XCS[, cs_indices, drop = FALSE]
+if(is.null(dim(XCS))) {
+XCS <- matrix(XCS, ncol = 1)
+}
+colnames(XCS) <- paste0("Main_CS", cs_indices)
+XCS <- as.matrix(XCS)
+
+# ============================================
+# Refit GLM with selected credible sets
+# ============================================
+if (ncol(Z) == 0) {
+# No covariates: only intercept and XCS
+Data = data.frame(y = y, XCS)
+} else {
+# With covariates
+Data = cbind(y, Z, XCS)
+Data = as.data.frame(Data)
+}
+
+fit_final = glm(y ~ ., data = Data, family = family)
+
+# Extract covariate coefficients (intercept + Z)
+alpha = coef(fit_final)[1:(ncol(ZI))]
+
+# Check convergence
+err = max(sqrt(mean((beta - beta_prev)^2)),
+  sqrt(mean((alpha - alpha_prev)^2)))
+g[iter] = err
+
+if (verbose) {
+cat(sprintf("Iteration %d: err = %.3e\n", iter, err))
+}
+
+if (err < max.eps && iter > min.iter) {
+if (verbose) cat("Converged!\n")
+break
+}
+}
+
+# ============================================
+# Post-processing
+# ============================================
+MainIndex = Identifying_MainEffect(fitX, colnames(X))
+G = summary(fit_final)$coefficients
+MainIndex <- safe_add_p(MainIndex, G)
+
+if (verbose) {
+plot(g, type = "o", col = "black", pch = 16,
+xlab = "Iteration",
+ylab = "Max Parameter Change",
+main = "Convergence Trace (Max |Δ| in alpha and beta)")
+for (i in seq_along(g)) {
+text(x = i, y = g[i],
+labels = formatC(g[i], format = "e", digits = 1),
+pos = 3, cex = 0.7, col = "red")
+}
+}
+
+AA = list(
+iter = iter,
+error = g,
+converged = (iter < max.iter && err < max.eps),
+fitX = fitX,
+fitJoint = fit_final,
+main_index = MainIndex,
+JointCoef = G
+)
+
+return(AA)
+}
