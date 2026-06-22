@@ -187,7 +187,7 @@ MainIndex=Identifying_MainEffect(fitX,colnames(X))
 } else {
 MainIndex=data.frame(
 Index=integer(0),Variable=character(0),CS=character(0),
-log10BF=numeric(0),PIP=numeric(0),Pvalue=numeric(0),
+lbf=numeric(0),PIP=numeric(0),Pvalue=numeric(0),
 stringsAsFactors=FALSE
 )
 }

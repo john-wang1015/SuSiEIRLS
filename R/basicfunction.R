@@ -81,7 +81,7 @@ S=list()
 for(i in g){
 indi=which(summ$cs==i)
 a=summ$variable[indi]
-b=data.frame(Index=a,Variable=nam[summ$variable[indi]],CS=paste0("Main_CS",i),log10BF=bb$cs_log10bf[bb$cs==i],PIP=summ$variable_prob[indi])
+b=data.frame(Index=a,Variable=nam[summ$variable[indi]],CS=paste0("Main_CS",i),lbf=bb$cs_log10bf[bb$cs==i]*log(10),PIP=summ$variable_prob[indi])
 S[[i]]=b
 }
 return(do.call(rbind,S))
@@ -95,7 +95,7 @@ Identifying_EnvEffect=function(fit,nam){
   for(i in g){
     indi=which(summ$cs==i)
     a=summ$variable[indi]
-    b=data.frame(Index=a,Variable=nam[summ$variable[indi]],CS=paste0("Env_CS",i),log10BF=bb$cs_log10bf[bb$cs==i],PIP=summ$variable_prob[indi])
+    b=data.frame(Index=a,Variable=nam[summ$variable[indi]],CS=paste0("Env_CS",i),lbf=bb$cs_log10bf[bb$cs==i]*log(10),PIP=summ$variable_prob[indi])
     S[[i]]=b
   }
   return(do.call(rbind,S))
@@ -110,7 +110,7 @@ S=list()
 for(i in g){
 indi=which(summ$cs==i)
 a=summ$variable[indi]
-b=data.frame(Index=a,Variable=namW[summ$variable[indi]],CS=paste0("Int_CS",i),log10BF=bb$cs_log10bf[bb$cs==i],PIP=summ$variable_prob[indi])
+b=data.frame(Index=a,Variable=namW[summ$variable[indi]],CS=paste0("Int_CS",i),lbf=bb$cs_log10bf[bb$cs==i]*log(10),PIP=summ$variable_prob[indi])
 S[[i]]=b
 }
 return(do.call(rbind,S))
