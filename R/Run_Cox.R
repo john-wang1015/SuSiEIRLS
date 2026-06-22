@@ -211,6 +211,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
   MainIndex = Identifying_MainEffect(fitX, colnames(X))
   G = summary(fit_final)$coefficients[, -2, drop = FALSE]
   MainIndex <- safe_add_p(MainIndex, G)
+  fit_final <- clean_model_environment(fit_final)
 
   if (verbose) {
     plot(g, type = "o", col = "black", pch = 16,

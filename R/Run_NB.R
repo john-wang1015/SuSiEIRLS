@@ -79,20 +79,18 @@ stop("All working weights are zero at iteration ",iter)
 n_eff=(sum(W_diag))^2/weight_denom
 
 phi0=summary(fit_final)$dispersion
-W_invsqrt=sqrt(W_diag/phi0)
 
-tilde_y=pseudo_response*W_invsqrt
-tilde_X=X*W_invsqrt
-tilde_Z=ZI*W_invsqrt
-
-ZtZ =matrixMultiply(tilde_Z,tilde_Z,transA=TRUE)+diag(1e-8,ncol(tilde_Z))
-ZinvZt=matrixMultiply(solve_with_ridge(ZtZ),tilde_Z,transB=TRUE)
-tilde_y=as.numeric(tilde_y-matrixVectorMultiply(tilde_Z,matrixVectorMultiply(ZinvZt,tilde_y)))
-tilde_X=tilde_X-ProjectRes(A=tilde_X,B=tilde_Z,n_threads=n_threads)
-
-XtX=blockwise_crossprod(tilde_X,n_threads=n_threads)
-Xty=as.numeric(matrixMultiply(tilde_X,matrix(tilde_y,ncol=1),transA=TRUE))
-yty=sum(tilde_y^2)
+suff=weighted_residual_suffstats(
+X=X,
+y=pseudo_response,
+ZI=ZI,
+weights=W_diag/phi0,
+n_threads=n_threads
+)
+XtX=suff$XtX
+Xty=suff$Xty
+yty=suff$yty
+rm(suff)
 
 fitX=susie_ss(
 XtX=XtX,Xty=Xty,yty=yty,
@@ -196,6 +194,7 @@ stringsAsFactors=FALSE
 
 G=tryCatch(summary(fit_final)$coefficients,error=function(e) NULL)
 if (!is.null(G)) MainIndex=safe_add_p(MainIndex,G)
+fit_final=clean_model_environment(fit_final)
 
 if (verbose && length(g)) {
 plot(g,type="o",col="black",pch=16,

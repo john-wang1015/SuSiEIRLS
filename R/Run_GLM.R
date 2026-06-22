@@ -89,25 +89,19 @@ if (!is.finite(weight_denom) || weight_denom <= 0) {
 }
 n_eff <-  (sum(W_diag))^2 / weight_denom
 phi0 <- summary(fit_final)$dispersion
-W_invsqrt = sqrt(W_diag / phi0)
 
-# Weighted transformation
-tilde_y = pseudo_response * W_invsqrt
-tilde_X = X * W_invsqrt
-tilde_Z = ZI * W_invsqrt
-
-# Projection: remove covariate effects
-ZtZ = matrixMultiply(tilde_Z, tilde_Z, transA = TRUE)
-Zinv = solve_with_ridge(ZtZ)
-Zinv = matrixMultiply(Zinv, tilde_Z, transB = TRUE)
-
-tilde_y = tilde_y - matrixVectorMultiply(tilde_Z, matrixVectorMultiply(Zinv, tilde_y))
-tilde_X = tilde_X - ProjectRes(A = tilde_X, B = tilde_Z, n_threads = n_threads)
-
-# Compute sufficient statistics for SuSiE
-XtX = blockwise_crossprod(tilde_X,n_threads = n_threads)
-Xty = as.numeric(matrixMultiply(tilde_X, matrix(tilde_y, ncol = 1), transA = TRUE))
-yty = sum(tilde_y^2)
+# Compute projected sufficient statistics without materializing tilde_X.
+suff = weighted_residual_suffstats(
+  X = X,
+  y = pseudo_response,
+  ZI = ZI,
+  weights = W_diag / phi0,
+  n_threads = n_threads
+)
+XtX = suff$XtX
+Xty = suff$Xty
+yty = suff$yty
+rm(suff)
 
 # Run SuSiE on projected data
 fitX <- susie_ss(
@@ -185,6 +179,7 @@ if (err < max.eps && iter > min.iter) {
 MainIndex = Identifying_MainEffect(fitX, colnames(X))
 G = summary(fit_final)$coefficients
 MainIndex <- safe_add_p(MainIndex, G)
+fit_final <- clean_model_environment(fit_final)
 
 if (verbose) {
 plot(g, type = "o", col = "black", pch = 16,

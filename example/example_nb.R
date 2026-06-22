@@ -7,6 +7,9 @@ suppressPackageStartupMessages({
 })
 
 load_all(".", quiet = TRUE)
+if (dir.exists("../logisticsusie")) {
+  load_all("../logisticsusie", quiet = TRUE)
+}
 source("example/otherfunction.R")
 
 ar_cov <- function(p, rho) {
@@ -231,7 +234,34 @@ run_nb_benchmark <- function(n_rep = 10, n = 1000, p = 10,
 }
 
 if (sys.nframe() == 0L) {
-  bench <- run_nb_benchmark(n_rep = 10, n = 1000, p = 10, L.init = 1)
-  print(bench$per_run)
-  print(bench$summary)
+  dat <- simulate_nb_data(seed = 1, n = 20000, p = 10)
+  nb_eta_fit <- fit_nb_eta_from_z(y = dat$y, Z = dat$Z)
+  X_aug_eta <- cbind(dat$X, eta_Z = nb_eta_fit$eta)
+
+  set_nb_ser_theta(nb_eta_fit$theta)
+  t1 <- Sys.time()
+  fit_ibss_eta_1 <- quiet_eval(logisticsusie::ibss_from_ser(
+    X = X_aug_eta, y = dat$y, L = 4,
+    tol = 1e-4, maxit = 100, num_cores = 1,
+    ser_function = logisticsusie::ser_from_univariate(nb_uni_fun)
+  ))
+  time_sec_1 <- as.numeric(difftime(Sys.time(), t1, units = "secs"))
+  reset_nb_ser_theta()
+
+  set_nb_ser_theta(nb_eta_fit$theta)
+  t1 <- Sys.time()
+  fit_ibss_eta_4 <- quiet_eval(logisticsusie::ibss_from_ser(
+    X = X_aug_eta, y = dat$y, L = 4,
+    tol = 1e-4, maxit = 100, num_cores = 4,
+    ser_function = logisticsusie::ser_from_univariate(nb_uni_fun)
+  ))
+  time_sec_4 <- as.numeric(difftime(Sys.time(), t1, units = "secs"))
+  reset_nb_ser_theta()
+
+  print(data.frame(
+    method = c("IBSS_nb_eta_plus_X_num_cores_1",
+               "IBSS_nb_eta_plus_X_num_cores_4"),
+    time_sec = c(time_sec_1, time_sec_4),
+    iter = c(fit_ibss_eta_1$iter, fit_ibss_eta_4$iter)
+  ))
 }

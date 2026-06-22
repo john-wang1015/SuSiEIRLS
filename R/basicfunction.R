@@ -144,6 +144,89 @@ solve_with_ridge <- function(A, B = NULL, ridge = 1e-8) {
   out
 }
 
+weighted_residual_suffstats <- function(X, y, ZI, weights,
+                                        n_threads = 1,
+                                        ridge = 1e-8,
+                                        block_size = 10000L) {
+  n <- nrow(X)
+  p <- ncol(X)
+  q <- if (is.null(ZI)) 0L else ncol(ZI)
+  block_size <- max(1L, as.integer(block_size))
+
+  weights <- as.numeric(weights)
+  weights[!is.finite(weights) | weights < 0] <- 0
+  y <- as.numeric(y)
+
+  XtX <- matrix(0, nrow = p, ncol = p)
+  Xty <- numeric(p)
+  yty <- 0
+
+  if (q > 0L) {
+    ZtZ <- matrix(0, nrow = q, ncol = q)
+    ZtX <- matrix(0, nrow = q, ncol = p)
+    Zty <- numeric(q)
+  }
+
+  for (start in seq.int(1L, n, by = block_size)) {
+    end <- min(n, start + block_size - 1L)
+    idx <- start:end
+    wi <- weights[idx]
+    if (!any(wi > 0)) next
+
+    Xb <- X[idx, , drop = FALSE]
+    yb <- y[idx]
+    Xw <- Xb * wi
+
+    XtX <- XtX + crossprod(Xb, Xw)
+    Xty <- Xty + as.numeric(crossprod(Xb, wi * yb))
+    yty <- yty + sum(wi * yb^2)
+
+    if (q > 0L) {
+      Zb <- ZI[idx, , drop = FALSE]
+      Zw <- Zb * wi
+      ZtZ <- ZtZ + crossprod(Zb, Zw)
+      ZtX <- ZtX + crossprod(Zb, Xw)
+      Zty <- Zty + as.numeric(crossprod(Zb, wi * yb))
+      rm(Zb, Zw)
+    }
+
+    rm(Xb, Xw, yb, wi)
+  }
+
+  yty_raw <- yty
+  if (q > 0L) {
+    Zinv_ZtX <- solve_with_ridge(ZtZ, ZtX, ridge = ridge)
+    Zinv_Zty <- solve_with_ridge(ZtZ, matrix(Zty, ncol = 1), ridge = ridge)
+
+    XtX <- XtX - matrixMultiply(ZtX, Zinv_ZtX, transA = TRUE)
+    Xty <- Xty - as.numeric(matrixMultiply(ZtX, Zinv_Zty, transA = TRUE))
+    yty <- yty - as.numeric(crossprod(Zty, Zinv_Zty))
+  }
+
+  XtX <- (XtX + t(XtX)) / 2
+  if (is.finite(yty) && yty < 0 &&
+      yty > -sqrt(.Machine$double.eps) * max(1, abs(yty_raw))) {
+    yty <- 0
+  }
+
+  dimnames(XtX) <- list(colnames(X), colnames(X))
+  names(Xty) <- colnames(X)
+
+  list(XtX = XtX, Xty = Xty, yty = as.numeric(yty))
+}
+
+clean_model_environment <- function(fit, env = .GlobalEnv) {
+  if (is.null(fit)) return(fit)
+  if (!is.null(fit$terms)) attr(fit$terms, ".Environment") <- env
+  if (!is.null(fit$formula) && inherits(fit$formula, "formula")) {
+    environment(fit$formula) <- env
+  }
+  if (!is.null(fit$call$formula) && inherits(fit$call$formula, "formula")) {
+    environment(fit$call$formula) <- env
+  }
+  fit
+}
+
 clean_coef <- function(x) {
   x <- as.numeric(x)
   x[!is.finite(x)] <- 0
@@ -279,6 +362,48 @@ select_by_residual_cor <- function(X, residual, available,
   ok <- is.finite(r)
   if (sum(ok) < 3L) return(NA_integer_)
   if (stats::sd(r[ok]) == 0) return(NA_integer_)
+
+  if (identical(cor_method, "pearson")) {
+    row_idx <- which(ok)
+    r0 <- r[row_idx]
+    r0 <- r0 - mean(r0)
+    r_ss <- sum(r0^2)
+    if (!is.finite(r_ss) || r_ss <= 0) return(NA_integer_)
+
+    which_available <- which(available)
+    scores <- rep(NA_real_, length(which_available))
+    block_cols <- 64L
+
+    for (start in seq.int(1L, length(which_available), by = block_cols)) {
+      end <- min(length(which_available), start + block_cols - 1L)
+      cols <- which_available[start:end]
+      Xb <- X[row_idx, cols, drop = FALSE]
+
+      if (any(!is.finite(Xb))) {
+        for (j in seq_along(cols)) {
+          xj <- Xb[, j]
+          good <- is.finite(xj)
+          if (sum(good) < 3L) next
+          scores[start + j - 1L] <- suppressWarnings(stats::cor(
+            xj[good], r0[good], method = "pearson"
+          ))
+        }
+      } else {
+        x_sum <- colSums(Xb)
+        x_ss <- colSums(Xb^2) - x_sum^2 / length(r0)
+        num <- as.numeric(crossprod(Xb, r0))
+        good <- is.finite(x_ss) & (x_ss > 0)
+        target <- start:end
+        scores[target[good]] <- num[good] / sqrt(x_ss[good] * r_ss)
+      }
+
+      rm(Xb)
+    }
+
+    scores[!is.finite(scores)] <- NA_real_
+    if (all(is.na(scores))) return(NA_integer_)
+    return(which_available[which.max(abs(scores))])
+  }
 
   Xsub <- X[ok, available, drop = FALSE]
   scores <- suppressWarnings(
