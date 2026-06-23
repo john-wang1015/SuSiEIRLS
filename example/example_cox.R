@@ -78,7 +78,7 @@ fit_irls_cox_once <- function(dat, L = 3, L.init = 1) {
     min.iter = 1,
     max.eps = 1e-4,
     susie.iter = 100,
-    coverage = 0.95,
+    coverage = 0.9,
     n_threads = 2,
     verbose = FALSE
   ))
@@ -165,7 +165,7 @@ run_cox_benchmark <- function(n_rep = 10, n = 1000, p = 10,
     } else {
       ibss_index <- susie_to_main_index_x_only(
         fit_ibss_Z, X_aug = X_aug_Z, p = ncol(dat$X),
-        coverage = 0.95, min_abs_cor = 0.1
+        coverage = 0.9, min_abs_cor = 0.1
       )
       eval <- cs_contains_truth(ibss_index, dat$true_idx)
       rows[[row_id]] <- data.frame(
@@ -196,7 +196,7 @@ run_cox_benchmark <- function(n_rep = 10, n = 1000, p = 10,
     } else {
       ibss_index <- susie_to_main_index_x_only(
         fit_ibss_eta, X_aug = X_aug_eta, p = ncol(dat$X),
-        coverage = 0.95, min_abs_cor = 0.1
+        coverage = 0.9, min_abs_cor = 0.1
       )
       eval <- cs_contains_truth(ibss_index, dat$true_idx)
       rows[[row_id]] <- data.frame(

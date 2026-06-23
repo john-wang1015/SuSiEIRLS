@@ -1,8 +1,8 @@
 #' Cox score IRLS-SuSiE path
 #' @export
 Run_Cox <- function(X, y, status, Z = NULL,
-                    L, max.iter, min.iter, max.eps, susie.iter, pip.thres = 5e-3,
-                    verbose = TRUE, n_threads = 1, coverage = 0.95,
+                    L, max.iter, min.iter, max.eps, susie.iter,
+                    verbose = TRUE, n_threads = 1, coverage = 0.9,
                     estimate_residual_variance = FALSE, scaled_prior_variance = 1,
                     residual_variance = 1, ridge = 1e-6,
                     L.init = 1,
@@ -132,13 +132,6 @@ Run_Cox <- function(X, y, status, Z = NULL,
     )
 
     beta = clean_coef(coef(fitX)[-1])
-    beta.cs = group.pip.filter(
-      pip.summary = summary(fitX)$var,
-      xQTL.cred.thres = coverage,
-      xQTL.pip.thres = pip.thres
-    )
-    pip.alive = beta.cs$ind.keep
-    beta[-pip.alive] = 0
 
     # Extract credible sets using summary information
     CSdt <- summary(fitX)$vars

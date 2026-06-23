@@ -17,11 +17,10 @@ Run_GLM(
   susie.iter,
   verbose = TRUE,
   n_threads = 1,
-  coverage = 0.95,
+  coverage = 0.9,
   estimate_residual_variance = FALSE,
   residual_variance = 1,
   scaled_prior_variance = 1,
-  pip.thres = 0.005,
   L.init = 1,
   init_cor_method = c("pearson", "spearman"),
   ...

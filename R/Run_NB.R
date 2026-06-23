@@ -2,10 +2,9 @@
 #' @export
 Run_NB=function(X,y,Z=NULL,weight_cutoff=0.005,
                 L,max.iter,min.iter,max.eps,susie.iter,
-                verbose=TRUE,n_threads=1,coverage=0.95,
+                verbose=TRUE,n_threads=1,coverage=0.9,
                 estimate_residual_variance=FALSE,
                 residual_variance=1,scaled_prior_variance=1,
-                pip.thres=0.005,
                 theta_init=10,
                 estimate_theta=TRUE,
                 L.init = 1,
@@ -104,18 +103,7 @@ estimate_prior_method="EM",
 coverage=coverage,...
 )
 
-bcoef=tryCatch(as.numeric(susieR::coef.susie(fitX)),error=function(e) numeric(0))
-if (length(bcoef) == p+1) {
-beta=clean_coef(bcoef[-1])
-} else if (length(bcoef) == p) {
-beta=clean_coef(bcoef)
-} else {
-beta=beta_prev
-}
-
-beta.cs=group.pip.filter(pip.summary=summary(fitX)$var,xQTL.cred.thres=coverage,xQTL.pip.thres=pip.thres)
-pip.alive=beta.cs$ind.keep
-if (length(pip.alive)) beta[-pip.alive]=0
+beta=clean_coef(coef(fitX)[-1])
 
 CSdt=summary(fitX)$vars
 cs_indices=sort(unique(CSdt$cs[CSdt$cs > 0]))

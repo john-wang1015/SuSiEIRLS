@@ -20,7 +20,7 @@ Z=Prostate$X[,c("age","svi")]
 X=Prostate$X[,setdiff(colnames(Prostate$X),c("age","svi"))]
 y=exp(Prostate$y)
 fit1=ncvreg(X=Prostate$X,y=exp(Prostate$y),family="poisson")
-fit3=SuSiE_IRLS(X=X,Z=Z,y=y,L=5,family=Gamma(),coverage=0.95,estimate_residual_variance=F)
+fit3=SuSiE_IRLS(X=X,Z=Z,y=y,L=5,family=Gamma(),coverage=0.9,estimate_residual_variance=F)
 fit1$beta[,which.min(BIC(fit1))]
 fit3$main_index
 fit3$fitX$sigma2

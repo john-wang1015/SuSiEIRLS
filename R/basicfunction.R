@@ -501,31 +501,6 @@ is_logit_binomial <- function(fam) {
     fam$family %in% c("binomial", "quasibinomial")
 }
 
-group.pip.filter=function(pip.summary,xQTL.cred.thres=0.95,xQTL.pip.thres=0.1){
-  ind=which(pip.summary$cs>0)
-  if(length(ind)>0){
-    J=max(pip.summary$cs[ind])
-    pip.summary$cs.pip=pip.summary$variable_prob
-    for(i in 1:J){
-      indi=which(pip.summary$cs==i)
-      summaryi=pip.summary[indi,]
-      pip.cred=sum(summaryi$variable_prob)
-      pip.summary$cs.pip[indi]=pip.cred
-    }
-    ind.keep=which(pip.summary$cs.pip>=xQTL.cred.thres&pip.summary$variable_prob>=xQTL.pip.thres)
-    cs=pip.summary$cs
-    cs.pip=pip.summary$cs.pip
-    cs->cs[pip.summary$variable]
-    cs.pip->cs.pip[pip.summary$variable]
-    cs[which(cs==-1)]=0
-  }else{
-    ind.keep=NULL
-    cs=pip.summary$cs*0
-    cs.pip=pip.summary$variable_prob*0
-  }
-  return(list(ind.keep=pip.summary$variable[ind.keep],cs=cs,cs.pip=cs.pip,result=pip.summary))
-}
-
 estimate_sigma2_null <- function(tilde_y, X, W_diag, strata,
                                  ZI = NULL, m = 200,
                                  method = c("median","mean")) {

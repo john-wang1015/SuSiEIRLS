@@ -11,7 +11,7 @@ SuSiE_IRLS(
   family = binomial(link = "logit"),
   n_threads = 4,
   L = 10,
-  coverage = 0.95,
+  coverage = 0.9,
   estimate_residual_variance = FALSE,
   residual_variance = 1,
   scaled_prior_variance = 1,
@@ -22,7 +22,6 @@ SuSiE_IRLS(
   theta_init = 10,
   estimate_theta = TRUE,
   susie.iter = 30,
-  pip.thres = 0.005,
   ridge = 1e-06,
   logit_method = c("pg", "glm"),
   L.init = 1,
@@ -46,7 +45,7 @@ or the string \code{"negbin"} for negative binomial. Ignored when
 
 \item{L}{Number of single effects in SuSiE. Default 10.}
 
-\item{coverage}{Credible set coverage level in SuSiE. Default 0.95.}
+\item{coverage}{Credible set coverage level in SuSiE. Default 0.9.}
 
 \item{estimate_residual_variance}{Logical for SuSiE residual variance estimation. Default FALSE.}
 
@@ -67,8 +66,6 @@ or the string \code{"negbin"} for negative binomial. Ignored when
 \item{estimate_theta}{Logical, whether to estimate theta in negative binomial. Default TRUE.}
 
 \item{susie.iter}{Maximum iterations for each SuSiE fit. Default 300.}
-
-\item{pip.thres}{PIP threshold; smaller PIPs are shrunk to zero. Default 0.005.}
 
 \item{ridge}{Diagonal ridge added to the Cox information matrix for positive
 definiteness. Used only in the Cox path. Default 1e-6.}

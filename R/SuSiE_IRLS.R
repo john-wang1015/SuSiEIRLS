@@ -27,12 +27,11 @@
 #' @param susie.iter Maximum iterations for each SuSiE fit. Default 300.
 #' @param verbose Logical flag for progress printing. Default TRUE.
 #' @param n_threads Integer number of threads for internal parallel blocks. Default 4.
-#' @param coverage Credible set coverage level in SuSiE. Default 0.95.
+#' @param coverage Credible set coverage level in SuSiE. Default 0.9.
 #' @param estimate_residual_variance Logical for SuSiE residual variance estimation. Default FALSE.
 #' @param residual_variance Fixed residual variance when not estimated. Default 1.
 #' @param scaled_prior_variance Prior variance for SuSiE single effects. Default 1.
 #' @param weight_cutoff Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.005.
-#' @param pip.thres PIP threshold; smaller PIPs are shrunk to zero. Default 0.005.
 #' @param theta_init Initial dispersion parameter for negative binomial. Default 10.
 #' @param estimate_theta Logical, whether to estimate theta in negative binomial. Default TRUE.
 #' @param ridge Diagonal ridge added to the Cox information matrix for positive
@@ -59,13 +58,13 @@
 #' @export
 SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
                        family = binomial(link = "logit"),
-                       n_threads = 4, L = 10, coverage = 0.95,
+                       n_threads = 4, L = 10, coverage = 0.9,
                        estimate_residual_variance = FALSE, residual_variance = 1,
                        scaled_prior_variance = 1,
                        max.iter = 15, max.eps = 1e-5, min.iter = 4,
                        weight_cutoff = 0.005,
                        theta_init = 10, estimate_theta = TRUE,
-                       susie.iter = 30, pip.thres = 0.005,
+                       susie.iter = 30,
                        ridge = 1e-6,
                        logit_method = c("pg", "glm"),
                        L.init = 1,
@@ -122,7 +121,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
         verbose = verbose,
         n_threads = n_threads,
         coverage = coverage,
-        pip.thres = pip.thres,
         scaled_prior_variance = scaled_prior_variance,
         estimate_residual_variance = estimate_residual_variance,
         residual_variance = residual_variance,
@@ -149,7 +147,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
         n_threads = n_threads,
         coverage = coverage,
         weight_cutoff = weight_cutoff,
-        pip.thres = pip.thres,
         scaled_prior_variance = scaled_prior_variance,
         estimate_residual_variance = estimate_residual_variance,
         residual_variance = residual_variance,
@@ -171,7 +168,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
         L = L, max.iter = max.iter, min.iter = min.iter, max.eps = max.eps,
         susie.iter = susie.iter, verbose = verbose, n_threads = n_threads,
         coverage = coverage, weight_cutoff = weight_cutoff,
-        pip.thres = pip.thres,
         scaled_prior_variance = scaled_prior_variance,
         estimate_residual_variance = estimate_residual_variance,
         residual_variance = residual_variance,
@@ -189,7 +185,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
       L = L, max.iter = max.iter, min.iter = min.iter, max.eps = max.eps,
       susie.iter = susie.iter, verbose = verbose, n_threads = n_threads,
       coverage = coverage, weight_cutoff = weight_cutoff,
-      pip.thres = pip.thres,
       scaled_prior_variance = scaled_prior_variance,
       estimate_residual_variance = estimate_residual_variance,
       residual_variance = residual_variance,
