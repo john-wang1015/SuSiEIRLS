@@ -65,10 +65,11 @@ alpha_prev = alpha
 
 eta <- fit_final$linear.predictors
 y01 <- as.numeric(fit_final$y)
+mu <- pmin(pmax(fit_final$fitted.values, 1e-8), 1 - 1e-8)
 eta_clip <- pmin(pmax(eta, -20), 20)
 omega <- ifelse(abs(eta_clip) < 1e-8, 0.25, 0.5 * tanh(eta_clip / 2) / eta_clip)
 z      <- (y01 - 0.5) / omega
-W_diag <- omega
+W_diag <- omega^2 / (mu * (1 - mu))
 W_diag <- pmax(W_diag, 1e-8)
 n_eff <- (sum(W_diag))^2 / sum(W_diag^2)
 
