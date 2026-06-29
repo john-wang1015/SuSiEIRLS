@@ -1,13 +1,16 @@
 #' General GLM IRLS-SuSiE path
+#' @inheritParams SuSiE_IRLS
 #' @export
 Run_GLM <- function(X, y, Z = NULL,weight_cutoff=0.005,
                     family = binomial(link = "logit"),
                     L, max.iter, min.iter, max.eps, susie.iter,
                     verbose = TRUE, n_threads = 1, coverage = 0.9,
-                    estimate_residual_variance = FALSE,
-                    residual_variance = 1,scaled_prior_variance=1,
+                    estimate_residual_variance = TRUE,
+                    residual_variance = 0.5,scaled_prior_variance=1,
+                    residual_variance_lowerbound = 0.1,
+                    residual_variance_upperbound = 1,
                     L.init = 1,
-                    init_cor_method = c("pearson", "spearman"),
+                    init_cor_method = c("spearman", "pearson"),
                     refit_noncs = TRUE,
                     noncs_var = 0.2, ...) {
 
@@ -110,6 +113,8 @@ fitX <- susie_ss(
   scaled_prior_variance = scaled_prior_variance,
   estimate_residual_variance = estimate_residual_variance,
   residual_variance = residual_variance,
+  residual_variance_lowerbound = residual_variance_lowerbound,
+  residual_variance_upperbound = residual_variance_upperbound,
   max_iter = susie.iter,
   estimate_prior_method = "EM",
   coverage=coverage,...
@@ -122,8 +127,20 @@ CSdt <- summary(fitX)$vars
 cs_indices <- unique(CSdt$cs[CSdt$cs > 0])
 cs_indices=sort(cs_indices)
 if(length(cs_indices) == 0) {
+if (iter <= min.iter) {
+noncs_res <- build_no_cs_noncs_refit_term(X, fitX)
+if (is.null(noncs_res)) {
+stop("No credible set detected at iteration ", iter,
+     " and non-CS residual fallback is degenerate")
+}
+XCS <- matrix(noncs_res, ncol = 1)
+colnames(XCS) <- "Main_CS_noncs"
+XCS <- as.matrix(XCS)
+XCS_refit <- XCS
+} else {
 stop("No credible set detected at iteration ", iter)
 }
+} else {
 Alpha_filtered <- fitX$alpha * 0
 for(i in cs_indices) {
 vars_in_cs_i <- CSdt$variable[CSdt$cs == i]
@@ -146,6 +163,7 @@ XCS = XCS, noncs_var = noncs_var
 )
 if (!is.null(noncs_term)) {
 XCS_refit <- cbind(XCS_refit, Main_CS_noncs = noncs_term)
+}
 }
 }
 

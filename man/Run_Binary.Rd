@@ -18,15 +18,77 @@ Run_Binary(
   verbose = TRUE,
   n_threads = 1,
   coverage = 0.9,
-  estimate_residual_variance = FALSE,
+  estimate_residual_variance = TRUE,
   scaled_prior_variance = 1,
-  residual_variance = 1,
+  residual_variance = 0.5,
+  residual_variance_lowerbound = 0.5,
+  residual_variance_upperbound = 1,
   L.init = 1,
-  init_cor_method = c("pearson", "spearman"),
+  init_cor_method = c("spearman", "pearson"),
   refit_noncs = TRUE,
   noncs_var = 0.2,
   ...
 )
+}
+\arguments{
+\item{X}{An n by p numeric matrix of predictors.}
+
+\item{y}{Response vector, or a \code{survival::Surv} object for Cox PH.}
+
+\item{Z}{An n by q matrix or vector of covariates. If NULL, only an intercept is used.}
+
+\item{family}{A GLM family object (e.g., \code{binomial(link="logit")}),
+or the string \code{"negbin"} for negative binomial. Ignored when
+\code{y} is a \code{Surv} object (Cox PH is used).}
+
+\item{weight_cutoff}{Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.005.}
+
+\item{L}{Number of single effects in SuSiE. Default 10.}
+
+\item{max.iter}{Maximum outer iterations. Default 15.}
+
+\item{min.iter}{Minimum iterations before convergence check. Default 3.}
+
+\item{max.eps}{Convergence threshold on max parameter change. Default 1e-5.}
+
+\item{susie.iter}{Maximum iterations for each SuSiE fit. Default 300.}
+
+\item{verbose}{Logical flag for progress printing. Default TRUE.}
+
+\item{n_threads}{Integer number of threads for internal parallel blocks. Default 4.}
+
+\item{coverage}{Credible set coverage level in SuSiE. Default 0.9.}
+
+\item{estimate_residual_variance}{Logical for SuSiE residual variance estimation. Default TRUE.}
+
+\item{scaled_prior_variance}{Prior variance for SuSiE single effects. Default 1.}
+
+\item{residual_variance}{Initial or fixed residual variance. Default 0.5.}
+
+\item{residual_variance_lowerbound}{Lower bound when estimating residual variance.
+Default 0.1; the PG-logit final correction uses 0.5 when this argument is not supplied.}
+
+\item{residual_variance_upperbound}{Upper bound when estimating residual variance.
+If NULL, defaults to 1.}
+
+\item{L.init}{Number of SNPs used in the initial low-dimensional warm start.
+Default 1.}
+
+\item{init_cor_method}{Correlation used by the greedy low-dimensional
+warm start. Either \code{"pearson"} or \code{"spearman"}.}
+
+\item{refit_noncs}{Logical. If TRUE, add a one-dimensional non-CS residual
+summary variable to the refit model when the current credible-set summary
+leaves enough posterior mean variation outside the CS terms. This variable
+is used only to improve the next linear predictor estimate and is not
+reported as a credible set. Default TRUE.}
+
+\item{noncs_var}{Minimum non-CS variance fraction required to add the
+non-CS residual summary variable. For example, \code{noncs_var = 0.2}
+adds it when the CS summary explains less than 80% of the posterior mean
+linear predictor variance. Default 0.2.}
+
+\item{...}{Additional arguments passed to the SuSiE fitting routine.}
 }
 \description{
 Binary logistic IRLS-SuSiE path

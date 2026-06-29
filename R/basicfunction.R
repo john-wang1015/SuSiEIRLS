@@ -273,6 +273,21 @@ build_noncs_refit_term <- function(X, fitX, CSdt, cs_indices, XCS,
   eta_noncs
 }
 
+build_no_cs_noncs_refit_term <- function(X, fitX) {
+  if (is.null(fitX)) return(NULL)
+
+  beta_total <- clean_coef(stats::coef(fitX)[-1L])
+  if (!length(beta_total) || length(beta_total) != ncol(X)) return(NULL)
+
+  noncs_res <- as.numeric(CppMatrix::matrixVectorMultiply(X, beta_total))
+  if (length(noncs_res) != nrow(X)) return(NULL)
+  if (!is.finite(stats::sd(noncs_res)) || stats::sd(noncs_res) <= 1e-8) {
+    return(NULL)
+  }
+
+  noncs_res
+}
+
 safe_add_p <- function(idx, Coefmat) {
   if (is.null(idx)) return(NULL)
   if (is.data.frame(idx) && nrow(idx) == 0) return(idx)
@@ -461,7 +476,7 @@ select_by_residual_cor <- function(X, residual, available,
 }
 
 greedy_glm_warm_start <- function(X, y, Z, family, L.init = 1,
-                                  cor_method = c("pearson", "spearman")) {
+                                  cor_method = c("spearman", "pearson")) {
   cor_method <- match.arg(cor_method)
   p <- ncol(X)
   k_init <- init_k_from_L(L.init, p)
@@ -484,7 +499,7 @@ greedy_glm_warm_start <- function(X, y, Z, family, L.init = 1,
 }
 
 greedy_nb_warm_start <- function(X, y, Z, L.init = 1, theta_init, estimate_theta,
-                                 cor_method = c("pearson", "spearman")) {
+                                 cor_method = c("spearman", "pearson")) {
   cor_method <- match.arg(cor_method)
   p <- ncol(X)
   k_init <- init_k_from_L(L.init, p)
@@ -513,7 +528,7 @@ greedy_nb_warm_start <- function(X, y, Z, L.init = 1, theta_init, estimate_theta
 }
 
 greedy_cox_warm_start <- function(X, y, status, Z, L.init = 1,
-                                  cor_method = c("pearson", "spearman")) {
+                                  cor_method = c("spearman", "pearson")) {
   cor_method <- match.arg(cor_method)
   p <- ncol(X)
   k_init <- init_k_from_L(L.init, p)

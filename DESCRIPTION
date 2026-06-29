@@ -21,7 +21,6 @@ Imports:
     survival,
     CppMatrix,
     stats,
-    Rcpp,
     SuSiE4I
 LinkingTo:
     Rcpp,

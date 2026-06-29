@@ -28,8 +28,12 @@
 #' @param verbose Logical flag for progress printing. Default TRUE.
 #' @param n_threads Integer number of threads for internal parallel blocks. Default 4.
 #' @param coverage Credible set coverage level in SuSiE. Default 0.9.
-#' @param estimate_residual_variance Logical for SuSiE residual variance estimation. Default FALSE.
-#' @param residual_variance Fixed residual variance when not estimated. Default 1.
+#' @param estimate_residual_variance Logical for SuSiE residual variance estimation. Default TRUE.
+#' @param residual_variance Initial or fixed residual variance. Default 0.5.
+#' @param residual_variance_lowerbound Lower bound when estimating residual variance.
+#'   Default 0.1; the PG-logit final correction uses 0.5 when this argument is not supplied.
+#' @param residual_variance_upperbound Upper bound when estimating residual variance.
+#'   If NULL, defaults to 1.
 #' @param scaled_prior_variance Prior variance for SuSiE single effects. Default 1.
 #' @param weight_cutoff Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.005.
 #' @param theta_init Initial dispersion parameter for negative binomial. Default 10.
@@ -68,7 +72,9 @@
 SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
                        family = binomial(link = "logit"),
                        n_threads = 4, L = 10, coverage = 0.9,
-                       estimate_residual_variance = FALSE, residual_variance = 1,
+                       estimate_residual_variance = TRUE, residual_variance = 0.5,
+                       residual_variance_lowerbound = 0.1,
+                       residual_variance_upperbound = NULL,
                        scaled_prior_variance = 1,
                        max.iter = 15, max.eps = 1e-5, min.iter = 4,
                        weight_cutoff = 0.005,
@@ -77,7 +83,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
                        ridge = 1e-6,
                        logit_method = c("pg", "glm"),
                        L.init = 1,
-                       init_cor_method = c("pearson", "spearman"),
+                       init_cor_method = c("spearman", "pearson"),
                        refit_noncs = TRUE,
                        noncs_var = 0.2,
                        verbose = TRUE, ...) {
@@ -91,6 +97,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
   is_cox_flag <- inherits(y, "Surv")
   logit_method <- match.arg(logit_method)
   init_cor_method <- match.arg(init_cor_method)
+  rv_upper_default <- if (is.null(residual_variance_upperbound)) 1 else residual_variance_upperbound
 
   # ---- basic checks ----
   if (is.null(X)) stop("X must not be NULL.")
@@ -133,8 +140,10 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
         n_threads = n_threads,
         coverage = coverage,
         scaled_prior_variance = scaled_prior_variance,
-        estimate_residual_variance = estimate_residual_variance,
-        residual_variance = residual_variance,
+        estimate_residual_variance = FALSE,
+        residual_variance = 1,
+        residual_variance_lowerbound = residual_variance_lowerbound,
+        residual_variance_upperbound = rv_upper_default,
         ridge = ridge,
         L.init = L.init,
         init_cor_method = init_cor_method,
@@ -163,6 +172,8 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
         scaled_prior_variance = scaled_prior_variance,
         estimate_residual_variance = estimate_residual_variance,
         residual_variance = residual_variance,
+        residual_variance_lowerbound = residual_variance_lowerbound,
+        residual_variance_upperbound = rv_upper_default,
         L.init = L.init,
         init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
@@ -177,6 +188,8 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
   }
 
   if (is_logit_binomial(family) && identical(logit_method, "pg")) {
+    pg_logit_rv_lower <- if (missing(residual_variance_lowerbound)) 0.5 else residual_variance_lowerbound
+    pg_logit_rv_upper <- if (is.null(residual_variance_upperbound)) 1 else residual_variance_upperbound
     return(
       Run_Binary(
         X = X, y = y, Z = Z, family = family,
@@ -186,6 +199,8 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
         scaled_prior_variance = scaled_prior_variance,
         estimate_residual_variance = estimate_residual_variance,
         residual_variance = residual_variance,
+        residual_variance_lowerbound = pg_logit_rv_lower,
+        residual_variance_upperbound = pg_logit_rv_upper,
         L.init = L.init,
         init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
@@ -205,6 +220,8 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
       scaled_prior_variance = scaled_prior_variance,
       estimate_residual_variance = estimate_residual_variance,
       residual_variance = residual_variance,
+      residual_variance_lowerbound = residual_variance_lowerbound,
+      residual_variance_upperbound = rv_upper_default,
       L.init = L.init,
       init_cor_method = init_cor_method,
       refit_noncs = refit_noncs,

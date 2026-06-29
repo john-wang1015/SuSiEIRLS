@@ -1,13 +1,16 @@
 #' Binary logistic IRLS-SuSiE path
+#' @inheritParams SuSiE_IRLS
 #' @export
 Run_Binary <- function(X, y, Z = NULL,
                     family = binomial(link = "logit"),weight_cutoff=0.005,
                     L, max.iter, min.iter, max.eps, susie.iter,
                     verbose = TRUE, n_threads = 1, coverage = 0.9,
-                    estimate_residual_variance = FALSE,scaled_prior_variance=1,
-                    residual_variance = 1,
+                    estimate_residual_variance = TRUE,scaled_prior_variance=1,
+                    residual_variance = 0.5,
+                    residual_variance_lowerbound = 0.5,
+                    residual_variance_upperbound = 1,
                     L.init = 1,
-                    init_cor_method = c("pearson", "spearman"),
+                    init_cor_method = c("spearman", "pearson"),
                     refit_noncs = TRUE,
                     noncs_var = 0.2, ...) {
 
@@ -67,11 +70,10 @@ alpha_prev = alpha
 
 eta <- fit_final$linear.predictors
 y01 <- as.numeric(fit_final$y)
-mu <- pmin(pmax(fit_final$fitted.values, 1e-8), 1 - 1e-8)
 eta_clip <- pmin(pmax(eta, -20), 20)
 omega <- ifelse(abs(eta_clip) < 1e-8, 0.25, 0.5 * tanh(eta_clip / 2) / eta_clip)
 z      <- (y01 - 0.5) / omega
-W_diag <- omega^2 / (mu * (1 - mu))
+W_diag <- omega
 W_diag <- pmax(W_diag, 1e-8)
 n_eff <- (sum(W_diag))^2 / sum(W_diag^2)
 
@@ -92,8 +94,8 @@ rm(suff)
 fitX <- susie_ss(
 XtX = XtX, Xty = Xty, yty = yty, n = max(n/2,n_eff), L = L,
 scaled_prior_variance = scaled_prior_variance,
-estimate_residual_variance = estimate_residual_variance,
-residual_variance = residual_variance,
+estimate_residual_variance = FALSE,
+residual_variance = 1,
 max_iter = susie.iter,
 estimate_prior_method = "EM",
 coverage = coverage,...
@@ -106,8 +108,20 @@ CSdt <- summary(fitX)$vars
 cs_indices <- unique(CSdt$cs[CSdt$cs > 0])
 cs_indices=sort(cs_indices)
 if(length(cs_indices) == 0) {
+if (iter <= min.iter) {
+noncs_res <- build_no_cs_noncs_refit_term(X, fitX)
+if (is.null(noncs_res)) {
+stop("No credible set detected at iteration ", iter,
+     " and non-CS residual fallback is degenerate")
+}
+XCS <- matrix(noncs_res, ncol = 1)
+colnames(XCS) <- "Main_CS_noncs"
+XCS <- as.matrix(XCS)
+XCS_refit <- XCS
+} else {
 stop("No credible set detected at iteration ", iter)
 }
+} else {
 Alpha_filtered <- fitX$alpha * 0
 for(i in cs_indices) {
 vars_in_cs_i <- CSdt$variable[CSdt$cs == i]
@@ -130,6 +144,7 @@ XCS = XCS, noncs_var = noncs_var
 )
 if (!is.null(noncs_term)) {
 XCS_refit <- cbind(XCS_refit, Main_CS_noncs = noncs_term)
+}
 }
 }
 
@@ -168,6 +183,66 @@ break
 # ============================================
 # Post-processing
 # ============================================
+eta <- fit_final$linear.predictors
+mu <- fit_final$fitted.values
+g_prime_mu <- 1 / fit_final$family$mu.eta(eta)
+var_mu <- fit_final$family$variance(mu)
+pseudo_response <- eta + (y - mu) * g_prime_mu
+W_diag <- 1 / (var_mu * g_prime_mu^2)
+bad <- !is.finite(pseudo_response) | !is.finite(W_diag) | (W_diag <= 0)
+if (mean(bad) > 0.9) {
+stop("Too many invalid observations in final logit correction")
+}
+if (any(bad)) {
+W_diag[bad] <- 0
+pseudo_response[bad] <- 0
+}
+W_diag <- robust_weight(W_diag, cutoff = weight_cutoff)
+weight_denom <- sum(W_diag^2)
+if (!is.finite(weight_denom) || weight_denom <= 0) {
+stop("All working weights are zero in final logit correction")
+}
+n_eff <- (sum(W_diag))^2 / weight_denom
+phi0 <- summary(fit_final)$dispersion
+suff <- weighted_residual_suffstats(
+X = X,
+y = pseudo_response,
+ZI = ZI,
+weights = W_diag / phi0,
+n_threads = n_threads
+)
+fitX <- susie_ss(
+XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
+n = max(n/2, n_eff), L = L,
+scaled_prior_variance = scaled_prior_variance,
+estimate_residual_variance = estimate_residual_variance,
+residual_variance = residual_variance,
+residual_variance_lowerbound = residual_variance_lowerbound,
+residual_variance_upperbound = residual_variance_upperbound,
+max_iter = susie.iter,
+estimate_prior_method = "EM",
+coverage = coverage,...
+)
+rm(suff)
+CSdt <- summary(fitX)$vars
+cs_indices <- sort(unique(CSdt$cs[CSdt$cs > 0]))
+if (length(cs_indices) == 0) {
+stop("No credible set detected after final logit correction")
+}
+Alpha_filtered <- fitX$alpha * 0
+for (i in cs_indices) {
+vars_in_cs_i <- CSdt$variable[CSdt$cs == i]
+Alpha_filtered[i, vars_in_cs_i] <- fitX$alpha[i, vars_in_cs_i]
+}
+Alpha_filtered <- Alpha_filtered * sign(fitX$mu)
+XCS <- matrixMultiply(X, as.matrix(Alpha_filtered), transB = TRUE)
+XCS <- XCS[, cs_indices, drop = FALSE]
+if (is.null(dim(XCS))) {
+XCS <- matrix(XCS, ncol = 1)
+}
+colnames(XCS) <- paste0("Main_CS", cs_indices)
+XCS <- as.matrix(XCS)
+
 if (ncol(Z) == 0) {
 Data = data.frame(y = y, XCS)
 } else {

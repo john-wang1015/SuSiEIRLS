@@ -12,8 +12,10 @@ SuSiE_IRLS(
   n_threads = 4,
   L = 10,
   coverage = 0.9,
-  estimate_residual_variance = FALSE,
-  residual_variance = 1,
+  estimate_residual_variance = TRUE,
+  residual_variance = 0.5,
+  residual_variance_lowerbound = 0.1,
+  residual_variance_upperbound = NULL,
   scaled_prior_variance = 1,
   max.iter = 15,
   max.eps = 1e-05,
@@ -25,7 +27,7 @@ SuSiE_IRLS(
   ridge = 1e-06,
   logit_method = c("pg", "glm"),
   L.init = 1,
-  init_cor_method = c("pearson", "spearman"),
+  init_cor_method = c("spearman", "pearson"),
   refit_noncs = TRUE,
   noncs_var = 0.2,
   verbose = TRUE,
@@ -49,9 +51,15 @@ or the string \code{"negbin"} for negative binomial. Ignored when
 
 \item{coverage}{Credible set coverage level in SuSiE. Default 0.9.}
 
-\item{estimate_residual_variance}{Logical for SuSiE residual variance estimation. Default FALSE.}
+\item{estimate_residual_variance}{Logical for SuSiE residual variance estimation. Default TRUE.}
 
-\item{residual_variance}{Fixed residual variance when not estimated. Default 1.}
+\item{residual_variance}{Initial or fixed residual variance. Default 0.5.}
+
+\item{residual_variance_lowerbound}{Lower bound when estimating residual variance.
+Default 0.1; the PG-logit final correction uses 0.5 when this argument is not supplied.}
+
+\item{residual_variance_upperbound}{Upper bound when estimating residual variance.
+If NULL, defaults to 1.}
 
 \item{scaled_prior_variance}{Prior variance for SuSiE single effects. Default 1.}
 
