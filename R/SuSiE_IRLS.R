@@ -13,8 +13,8 @@
 #' @param X An n by p numeric matrix of predictors.
 #' @param y Response vector, or a \code{survival::Surv} object for Cox PH.
 #' @param Z An n by q matrix or vector of covariates. If NULL, only an intercept is used.
-#' @param family A GLM family object (e.g., \code{binomial(link="logit")}),
-#'   or the string \code{"negbin"} for negative binomial. Ignored when
+#' @param family A GLM or mgcv family object (e.g., \code{binomial(link="logit")}),
+#'   or the string \code{"negbin"} for \code{mgcv::nb()}. Ignored when
 #'   \code{y} is a \code{Surv} object (Cox PH is used).
 #' @param logit_method Method for binomial-logit outcomes. \code{"pg"} uses
 #'   \code{Run_Binary}; \code{"glm"} uses the general GLM IRLS path.
@@ -67,6 +67,7 @@
 #' @importFrom survival coxph Surv
 #' @importFrom CppMatrix matrixMultiply matrixVectorMultiply matrixCor
 #' @importFrom MASS glm.nb negative.binomial
+#' @importFrom mgcv gam bam nb tw betar scat
 #' @importFrom SuSiE4I blockwise_crossprod large_scale
 #' @export
 SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
@@ -92,7 +93,8 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
   is_logit_binomial <- function(fam) {
     inherits(fam, "family") && identical(fam$family, "binomial") && identical(fam$link, "logit")
   }
-  is_negbin_flag <- is.character(family) && length(family) == 1 && identical(family, "negbin")
+  is_negbin_flag <- is.character(family) && length(family) == 1 &&
+    family %in% c("negbin", "nb", "negative.binomial")
   # Cox is identified by a Surv-typed response; family is then ignored.
   is_cox_flag <- inherits(y, "Surv")
   logit_method <- match.arg(logit_method)
@@ -156,10 +158,13 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
 
   if (is_negbin_flag) {
     return(
-      Run_NB(
+      Run_GLM(
         X = X, y = y, Z = Z,
-        theta_init = theta_init,
-        estimate_theta = estimate_theta,
+        family = if (isTRUE(estimate_theta)) {
+          mgcv::nb(theta = NULL)
+        } else {
+          mgcv::nb(theta = theta_init)
+        },
         L = L,
         max.iter = max.iter,
         min.iter = min.iter,
@@ -184,7 +189,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
   }
 
   if (is.character(family)) {
-    stop("Unsupported family string. Use \"negbin\" or a GLM family object.")
+    stop("Unsupported family string. Use \"negbin\" or a GLM/mgcv family object.")
   }
 
   if (is_logit_binomial(family) && identical(logit_method, "pg")) {

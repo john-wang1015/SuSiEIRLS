@@ -165,7 +165,7 @@ run_cox_benchmark <- function(n_rep = 10, n = 1000, p = 10,
     } else {
       ibss_index <- susie_to_main_index_x_only(
         fit_ibss_Z, X_aug = X_aug_Z, p = ncol(dat$X),
-        coverage = 0.9, min_abs_cor = 0.1
+        coverage = 0.9, min_abs_cor = 0.5
       )
       eval <- cs_contains_truth(ibss_index, dat$true_idx)
       rows[[row_id]] <- data.frame(
@@ -196,7 +196,7 @@ run_cox_benchmark <- function(n_rep = 10, n = 1000, p = 10,
     } else {
       ibss_index <- susie_to_main_index_x_only(
         fit_ibss_eta, X_aug = X_aug_eta, p = ncol(dat$X),
-        coverage = 0.9, min_abs_cor = 0.1
+        coverage = 0.9, min_abs_cor = 0.5
       )
       eval <- cs_contains_truth(ibss_index, dat$true_idx)
       rows[[row_id]] <- data.frame(

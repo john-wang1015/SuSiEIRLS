@@ -74,7 +74,7 @@ Identifying_MainEffect=function(fit,nam){
 summ=summary(fit)$vars
 g=unique(summ$cs[which(summ$cs>0)])
 if(length(g)==0){
-stop("No credible set detected")
+return(NULL)
 }
 bb=summary(fit)$cs
 S=list()
@@ -241,34 +241,41 @@ build_noncs_refit_term <- function(X, fitX, CSdt, cs_indices, XCS,
   beta_total <- clean_coef(stats::coef(fitX)[-1L])
   if (!length(beta_total) || length(beta_total) != ncol(X)) return(NULL)
 
-  eta_total <- as.numeric(CppMatrix::matrixVectorMultiply(X, beta_total))
-  var_total <- stats::var(eta_total)
-  if (!is.finite(var_total) || var_total <= 1e-12) return(NULL)
+  eta_x <- as.numeric(CppMatrix::matrixVectorMultiply(X, beta_total))
+  var_eta_x <- stats::var(eta_x)
+  if (!is.finite(var_eta_x) || var_eta_x <= 1e-12) return(NULL)
 
   noncs_var <- as.numeric(noncs_var)[1L]
   if (!is.finite(noncs_var)) noncs_var <- 0.2
   noncs_var <- min(max(noncs_var, 0), 1)
 
-  cs_parameter <- numeric(length(cs_indices))
-  for (ii in seq_along(cs_indices)) {
-    i_cs <- cs_indices[ii]
-    vars_in_cs_i <- CSdt$variable[CSdt$cs == i_cs]
-    vars_in_cs_i <- vars_in_cs_i[vars_in_cs_i >= 1L & vars_in_cs_i <= ncol(X)]
-    if (!length(vars_in_cs_i)) next
+  XCS <- as.matrix(XCS)
+  if (nrow(XCS) != length(eta_x)) return(NULL)
+  if (any(!is.finite(XCS)) || any(!is.finite(eta_x))) return(NULL)
 
-    a <- as.numeric(fitX$alpha[i_cs, vars_in_cs_i])
-    m <- as.numeric(fitX$mu[i_cs, vars_in_cs_i])
-    ok <- is.finite(a) & is.finite(m) & a > 0
-    if (any(ok)) {
-      cs_parameter[ii] <- sum(a[ok] * abs(m[ok])) / sum(a[ok])
-    }
-  }
+  keep <- apply(XCS, 2, function(z) {
+    stats::sd(as.numeric(z)) > 1e-8
+  })
+  if (!any(keep)) return(NULL)
+  XCS <- XCS[, keep, drop = FALSE]
 
-  eta_cs <- as.numeric(as.matrix(XCS) %*% cs_parameter)
-  cs_var_ratio <- stats::var(eta_cs) / var_total
-  eta_noncs <- eta_total - eta_cs
-  if (!is.finite(cs_var_ratio) || cs_var_ratio >= (1 - noncs_var)) return(NULL)
-  if (!is.finite(stats::sd(eta_noncs)) || stats::sd(eta_noncs) <= 1e-8) return(NULL)
+  X_full <- cbind(Intercept = 1, XCS)
+  XtX <- crossprod(X_full)
+  if (qr(XtX)$rank < ncol(XtX)) return(NULL)
+
+  proj_coef <- tryCatch(
+    solve(XtX, crossprod(X_full, eta_x)),
+    error = function(e) NULL
+  )
+  if (is.null(proj_coef) || any(!is.finite(proj_coef))) return(NULL)
+
+  eta_noncs <- eta_x - as.numeric(X_full %*% proj_coef)
+  var_noncs <- stats::var(eta_noncs)
+  if (!is.finite(var_noncs) || var_noncs <= 1e-12) return(NULL)
+  if (var_noncs / var_eta_x < noncs_var) return(NULL)
+
+  cors <- suppressWarnings(stats::cor(eta_noncs, XCS))
+  if (any(is.finite(cors) & abs(cors) >= 0.999)) return(NULL)
 
   eta_noncs
 }

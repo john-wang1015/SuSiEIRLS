@@ -58,6 +58,8 @@ g = c()
 beta = rep(0, p)
 beta_prev = beta
 alpha_prev = alpha * 0
+early_no_cs <- FALSE
+XCS <- NULL
 
 # ============================================
 # Main iteration loop
@@ -111,15 +113,22 @@ if(length(cs_indices) == 0) {
 if (iter <= min.iter) {
 noncs_res <- build_no_cs_noncs_refit_term(X, fitX)
 if (is.null(noncs_res)) {
-stop("No credible set detected at iteration ", iter,
-     " and non-CS residual fallback is degenerate")
+early_no_cs <- TRUE
+if (verbose) {
+cat("No credible set detected; returning current no-CS fit.\n")
+}
+break
 }
 XCS <- matrix(noncs_res, ncol = 1)
 colnames(XCS) <- "Main_CS_noncs"
 XCS <- as.matrix(XCS)
 XCS_refit <- XCS
 } else {
-stop("No credible set detected at iteration ", iter)
+early_no_cs <- TRUE
+if (verbose) {
+cat("No credible set detected; returning current no-CS fit.\n")
+}
+break
 }
 } else {
 Alpha_filtered <- fitX$alpha * 0
@@ -183,6 +192,25 @@ break
 # ============================================
 # Post-processing
 # ============================================
+if (early_no_cs) {
+MainIndex <- Identifying_MainEffect(fitX, colnames(X))
+G <- summary(fit_final)$coefficients
+MainIndex <- safe_add_p(MainIndex, G)
+fit_final <- clean_model_environment(fit_final)
+return(list(
+iter = iter,
+error = g,
+converged = FALSE,
+fitX = fitX,
+fitJoint = fit_final,
+main_index = MainIndex,
+JointCoef = G
+))
+}
+
+pg_fitX <- fitX
+pg_XCS <- XCS
+pg_converged <- (iter < max.iter && err < max.eps)
 eta <- fit_final$linear.predictors
 mu <- fit_final$fitted.values
 g_prime_mu <- 1 / fit_final$family$mu.eta(eta)
@@ -227,7 +255,27 @@ rm(suff)
 CSdt <- summary(fitX)$vars
 cs_indices <- sort(unique(CSdt$cs[CSdt$cs > 0]))
 if (length(cs_indices) == 0) {
-stop("No credible set detected after final logit correction")
+if (ncol(Z) == 0) {
+Data = data.frame(y = y, pg_XCS)
+} else {
+Data = cbind(y, Z, pg_XCS)
+Data = as.data.frame(Data)
+}
+fit_final = glm(y ~ ., data = Data, family = family)
+MainIndex = Identifying_MainEffect(pg_fitX, colnames(X))
+G = summary(fit_final)$coefficients
+MainIndex <- safe_add_p(MainIndex, G)
+if (!is.null(MainIndex)) MainIndex$status <- "PG IRLS"
+fit_final <- clean_model_environment(fit_final)
+return(list(
+iter = iter,
+error = g,
+converged = pg_converged,
+fitX = pg_fitX,
+fitJoint = fit_final,
+main_index = MainIndex,
+JointCoef = G
+))
 }
 Alpha_filtered <- fitX$alpha * 0
 for (i in cs_indices) {

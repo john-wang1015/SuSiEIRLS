@@ -98,7 +98,7 @@ glmnet_selection_eval <- function(beta_hat, true_idx, p) {
 }
 
 susie_to_main_index_x_only <- function(fit_susie, X_aug, p, coverage = 0.9,
-                                       min_abs_cor = 0.1) {
+                                       min_abs_cor = 0.5) {
   class(fit_susie) <- c("susie", "list")
   cs_out <- susieR::susie_get_cs(
     fit_susie, X = X_aug, coverage = coverage, min_abs_cor = min_abs_cor
