@@ -71,7 +71,7 @@
 #' @importFrom CppMatrix matrixMultiply matrixVectorMultiply matrixCor
 #' @importFrom MASS glm.nb negative.binomial
 #' @importFrom mgcv gam bam nb tw betar scat
-#' @importFrom SuSiE4I blockwise_crossprod large_scale
+#' @importFrom SuSiE4I blockwise_crossprod cox_suffstat large_scale
 #' @export
 SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
                        family = binomial(link = "logit"),

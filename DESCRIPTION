@@ -23,9 +23,6 @@ Imports:
     CppMatrix,
     stats,
     SuSiE4I
-LinkingTo:
-    Rcpp,
-    RcppArmadillo
 Remotes:
     harryyiheyang/CppMatrix,
     harryyiheyang/SuSiE4I,
