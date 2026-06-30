@@ -20,7 +20,7 @@ devtools::install_github("harryyiheyang/SuSiEIRLS")
 | Response | Family / method | Sufficient statistics |
 |---|---|---|
 | Continuous or count | Any `stats` or `mgcv` family object (e.g. `poisson()`, `Gamma()`, `mgcv::tw()`, `mgcv::betar()`, `mgcv::nb()`) | IRLS working response and weights |
-| Binary | `binomial(link = "logit")` with `logit_method = "pg"` (default) | | Pólya-Gamma augmented pseudo-response |
+| Binary | `binomial(link = "logit")` with `logit_method = "pg"` (default) | Pólya-Gamma augmented pseudo-response |
 | Binary | `binomial(link = "logit")` with `logit_method = "glm"` | Standard IRLS working response |
 | Survival | Pass a `survival::Surv` object as `y` | Cox partial-likelihood score and information |
 
