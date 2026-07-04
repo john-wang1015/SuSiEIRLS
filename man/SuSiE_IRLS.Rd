@@ -30,6 +30,7 @@ SuSiE_IRLS(
   init_cor_method = NULL,
   refit_noncs = TRUE,
   noncs_var = 0.2,
+  scale_data = TRUE,
   suff_block_size = 10000L,
   verbose = TRUE,
   ...
@@ -100,6 +101,12 @@ reported as a credible set. Default TRUE.}
 non-CS residual summary variable. For example, \code{noncs_var = 0.2}
 adds it when the CS summary explains less than 80% of the posterior mean
 linear predictor variance. Default 0.2.}
+
+\item{scale_data}{Logical. If TRUE, standardize \code{X} with
+\code{SuSiE4I::large_scale()} and center/scale non-binary columns of
+\code{Z}; binary columns of \code{Z} are left on their original scale. If
+FALSE, \code{X} and non-binary columns of \code{Z} are assumed to already
+be standardized. Default TRUE.}
 
 \item{suff_block_size}{Row block size for weighted sufficient-statistic
 crossproducts. Larger values can be faster for small-to-moderate p when

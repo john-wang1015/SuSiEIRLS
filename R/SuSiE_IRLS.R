@@ -51,6 +51,11 @@
 #'   non-CS residual summary variable. For example, \code{noncs_var = 0.2}
 #'   adds it when the CS summary explains less than 80% of the posterior mean
 #'   linear predictor variance. Default 0.2.
+#' @param scale_data Logical. If TRUE, standardize \code{X} with
+#'   \code{SuSiE4I::large_scale()} and center/scale non-binary columns of
+#'   \code{Z}; binary columns of \code{Z} are left on their original scale. If
+#'   FALSE, \code{X} and non-binary columns of \code{Z} are assumed to already
+#'   be standardized. Default TRUE.
 #' @param suff_block_size Row block size for weighted sufficient-statistic
 #'   crossproducts. Larger values can be faster for small-to-moderate p when
 #'   memory is sufficient. Default 10000.
@@ -90,20 +95,9 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
                        init_cor_method = NULL,
                        refit_noncs = TRUE,
                        noncs_var = 0.2,
+                       scale_data = TRUE,
                        suff_block_size = 10000L,
                        verbose = TRUE, ...) {
-
-  # ---- helpers ----
-  is_logit_binomial <- function(fam) {
-    inherits(fam, "family") && identical(fam$family, "binomial") && identical(fam$link, "logit")
-  }
-  is_negbin_flag <- is.character(family) && length(family) == 1 &&
-    family %in% c("negbin", "nb", "negative.binomial")
-  # Cox is identified by a Surv-typed response; family is then ignored.
-  is_cox_flag <- inherits(y, "Surv")
-  logit_method <- match.arg(logit_method)
-  rv_upper_default <- if (is.null(residual_variance_upperbound)) 1 else residual_variance_upperbound
-  suff_block_size <- validate_suff_block_size(suff_block_size)
 
   # ---- basic checks ----
   if (is.null(X)) stop("X must not be NULL.")
@@ -119,8 +113,13 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
 
   if (!is.null(Z)) {
     Z <- as.matrix(Z)
+    if (!is.numeric(Z)) stop("Z must be numeric.")
     if (nrow(Z) != n) stop("nrow(Z) must equal nrow(X).")
     if (is.null(colnames(Z))) colnames(Z) <- paste0("Z", seq_len(ncol(Z)))
+  }
+
+  if (!is.logical(scale_data) || length(scale_data) != 1L || is.na(scale_data)) {
+    stop("scale_data must be TRUE or FALSE.")
   }
 
   if (!is.numeric(weight_cutoff) || length(weight_cutoff) != 1L || !is.finite(weight_cutoff)) {
@@ -128,6 +127,39 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
   }
   if (weight_cutoff <= 0) weight_cutoff <- 1e-6
   if (weight_cutoff >= 0.05) weight_cutoff <- 0.049
+
+  # ---- optional standardization ----
+  if (isTRUE(scale_data)) {
+    x_dimnames <- dimnames(X)
+    X <- SuSiE4I::large_scale(X, n_threads = n_threads, center = TRUE, scale = TRUE)
+    X <- as.matrix(X)
+    dimnames(X) <- x_dimnames
+
+    if (!is.null(Z)) {
+      z_dimnames <- dimnames(Z)
+      Z <- apply(Z, 2L, function(x) {
+        vals <- unique(stats::na.omit(x))
+        if (length(vals) <= 2L) return(as.numeric(x))
+        as.numeric(scale(x))
+      })
+      Z <- as.matrix(Z)
+      dimnames(Z) <- z_dimnames
+    }
+  } else if (isTRUE(verbose)) {
+    cat("scale_data = FALSE: assuming X is column-centered and standardized; non-binary columns of Z should also be standardized.\n")
+  }
+
+  # ---- helpers ----
+  is_logit_binomial <- function(fam) {
+    inherits(fam, "family") && identical(fam$family, "binomial") && identical(fam$link, "logit")
+  }
+  is_negbin_flag <- is.character(family) && length(family) == 1 &&
+    family %in% c("negbin", "nb", "negative.binomial")
+  # Cox is identified by a Surv-typed response; family is then ignored.
+  is_cox_flag <- inherits(y, "Surv")
+  logit_method <- match.arg(logit_method)
+  rv_upper_default <- if (is.null(residual_variance_upperbound)) 1 else residual_variance_upperbound
+  suff_block_size <- validate_suff_block_size(suff_block_size)
 
   # ---- dispatch ----
   if (is_cox_flag) {
