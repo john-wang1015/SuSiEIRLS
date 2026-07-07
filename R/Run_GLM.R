@@ -195,6 +195,8 @@
 
 #' General mgcv IRLS-SuSiE path
 #' @inheritParams SuSiE_IRLS
+#' @param family A GLM or mgcv family object that provides \code{variance()}
+#'   and \code{mu.eta()} for working IRLS.
 #' @importFrom mgcv gam bam nb tw betar scat
 #' @export
 Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,

@@ -11,7 +11,7 @@ The package extends the Sum of Single Effects (SuSiE) framework to generalized l
 devtools::install_github("harryyiheyang/SuSiEIRLS")
 ```
 
-**Dependencies:** `susieR`, `mgcv`, `survival`, `MASS`, `CppMatrix`, `SuSiE4I`.
+**Dependencies:** `susieR`, `mgcv`, `ordinal`, `survival`, `MASS`, `CppMatrix`, `SuSiE4I`.
 
 ## Main function
 
@@ -22,6 +22,7 @@ devtools::install_github("harryyiheyang/SuSiEIRLS")
 | Continuous or count | Any `stats` or `mgcv` family object (e.g. `poisson()`, `Gamma()`, `mgcv::tw()`, `mgcv::betar()`, `mgcv::nb()`) | IRLS working response and weights |
 | Binary | `binomial(link = "logit")` with `logit_method = "pg"` (default) | Pólya-Gamma augmented pseudo-response |
 | Binary | `binomial(link = "logit")` with `logit_method = "glm"` | Standard IRLS working response |
+| Ordered categorical | `family = "ocat"` or `mgcv::ocat(R = )` | Cumulative-logit score and observed information |
 | Survival | Pass a `survival::Surv` object as `y` | Cox partial-likelihood score and information |
 
 ### Basic usage
@@ -40,6 +41,9 @@ fit <- SuSiE_IRLS(X = X, Z = Z, y = y, family = poisson(), L = 10)
 
 ## Negative binomial (mgcv parameterisation)
 fit <- SuSiE_IRLS(X = X, Z = Z, y = y, family = "negbin", L = 10)
+
+## Ordered categorical cumulative-logit outcome
+fit <- SuSiE_IRLS(X = X, Z = Z, y = ordered_y, family = "ocat", L = 10)
 
 ## Cox proportional hazards
 library(survival)
@@ -75,6 +79,8 @@ A list containing:
 **GLM / extended-GLM path.** The algorithm uses IRLS to linearise the GLM likelihood around the current estimate. At each outer iteration it forms a working response $z$ and diagonal weight matrix $W$, projects out covariates $Z$, and constructs weighted sufficient statistics $(X^\top W X,\; X^\top W z,\; z^\top W z)$ for `susie_ss()`. The residual variance is estimated within a bounded interval (default $[0.1, 1]$).
 
 **Binary (Pólya-Gamma) path.** For binary logistic outcomes, the Pólya-Gamma data-augmentation identity represents the logistic likelihood as a conditionally Gaussian problem with augmentation weights $\omega_i = \tanh(\eta_i/2) / (2\eta_i)$. This path improves signal detection when the standard IRLS approximation is weak. The final log Bayes factors are corrected back to the IRLS scale.
+
+**Ordered categorical path.** For ordered categorical outcomes, the package uses the cumulative-logit likelihood with flexible thresholds estimated by `ordinal::clm()`. It builds a local quadratic from the score and observed information for the location parameter, projects out both covariates and threshold nuisance parameters, and passes the resulting sufficient statistics to `susie_ss()`. The default SuSiE residual variance is initialized at 0.5 and estimated within $[0.1, 1]$.
 
 **Cox path.** For survival outcomes, no working response exists. The package instead constructs score-based sufficient statistics $(X^\top M,\; A - B^\top B)$ from the Cox partial likelihood using a single-pass Breslow accumulator implemented in C++ (`cox_suffstat.cpp`). These replace $X^\top y$ and $X^\top X$ in the SuSiE-SS call.
 

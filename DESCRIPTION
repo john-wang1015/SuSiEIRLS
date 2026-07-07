@@ -6,17 +6,21 @@ Author: Yihe Yang
 Maintainer: Yihe Yang <yxy1234@case.edu>
 Description: Implements SuSiE model for extended generalized linear models (EGLMs) 
     using an Iteratively Reweighted Least Squares (IRLS) algorithm, and for Cox 
-    proportional-hazards survival outcomes via score-based sufficient statistics. The 
+    proportional-hazards survival outcomes via score-based sufficient statistics, and
+    ordered-categorical outcomes via cumulative-logit score statistics. The
     package extends the Sum of Single Effects (SuSiE) framework to logistic, negative 
     binomial, and other GLMs, as well as time-to-event data, fine-mapping non-Gaussian 
-    and censored outcomes within a unified iterative framework.
+    ordered, and censored outcomes within a unified iterative framework.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.3.3
 Imports:
     MASS,
+    conquer,
     mgcv,
+    ordinal,
+    qgam,
     graphics,
     susieR,
     survival,

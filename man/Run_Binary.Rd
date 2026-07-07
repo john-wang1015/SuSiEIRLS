@@ -38,9 +38,7 @@ Run_Binary(
 
 \item{Z}{An n by q matrix or vector of covariates. If NULL, only an intercept is used.}
 
-\item{family}{A GLM or mgcv family object (e.g., \code{binomial(link="logit")}),
-or the string \code{"negbin"} for \code{mgcv::nb()}. Ignored when
-\code{y} is a \code{Surv} object (Cox PH is used).}
+\item{family}{A binomial-logit family object.}
 
 \item{weight_cutoff}{Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.005.}
 

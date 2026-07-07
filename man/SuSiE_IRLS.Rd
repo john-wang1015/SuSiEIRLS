@@ -23,6 +23,11 @@ SuSiE_IRLS(
   weight_cutoff = 0.005,
   theta_init = 10,
   estimate_theta = TRUE,
+  qu = 0.5,
+  lsig = NULL,
+  qgam_control = list(),
+  qgam_argGam = NULL,
+  qgam_discrete = FALSE,
   susie.iter = 30,
   ridge = 1e-06,
   logit_method = c("pg", "glm"),
@@ -44,8 +49,11 @@ SuSiE_IRLS(
 \item{y}{Response vector, or a \code{survival::Surv} object for Cox PH.}
 
 \item{family}{A GLM or mgcv family object (e.g., \code{binomial(link="logit")}),
-or the string \code{"negbin"} for \code{mgcv::nb()}. Ignored when
-\code{y} is a \code{Surv} object (Cox PH is used).}
+the string \code{"negbin"} for \code{mgcv::nb()}, or the string
+\code{"qgam"} for quantile-GAM IRLS, or \code{"ocat"} /
+\code{mgcv::ocat(R = )} for ordered-categorical cumulative-logit
+outcomes. Ignored when \code{y} is a
+\code{Surv} object (Cox PH is used).}
 
 \item{n_threads}{Integer number of threads for internal parallel blocks. Default 4.}
 
@@ -76,6 +84,18 @@ If NULL, defaults to 1.}
 \item{theta_init}{Initial dispersion parameter for negative binomial. Default 10.}
 
 \item{estimate_theta}{Logical, whether to estimate theta in negative binomial. Default TRUE.}
+
+\item{qu}{Quantile level used when \code{family = "qgam"}. Default 0.5.}
+
+\item{lsig}{Reserved for the qgam path and must be NULL. qgam calibrates
+\code{lsig} at every refit; SuSiE then uses \code{exp(lsig)} as a fixed
+residual variance.}
+
+\item{qgam_control}{Control list passed to \code{qgam::qgam()}.}
+
+\item{qgam_argGam}{Optional \code{argGam} list passed to \code{qgam::qgam()}.}
+
+\item{qgam_discrete}{Logical, passed to \code{qgam::qgam(discrete = )}.}
 
 \item{susie.iter}{Maximum iterations for each SuSiE fit. Default 300.}
 

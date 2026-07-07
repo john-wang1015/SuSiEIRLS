@@ -141,10 +141,13 @@ solve_with_ridge <- function(A, B = NULL, ridge = 1e-8) {
 weighted_residual_suffstats <- function(X, y, ZI, weights,
                                         n_threads = 1,
                                         ridge = 1e-8,
-                                        block_size = 10000L) {
+                                        block_size = 10000L,
+                                        projection_solver = c("ridge", "ginv"),
+                                        ginv_tol = sqrt(.Machine$double.eps)) {
   if (!is.null(ZI)) ZI <- as.matrix(ZI)
   q <- if (is.null(ZI)) 0L else ncol(ZI)
   block_size <- max(1L, as.integer(block_size))
+  projection_solver <- match.arg(projection_solver)
 
   weights <- as.numeric(weights)
   weights[!is.finite(weights) | weights < 0] <- 0
@@ -167,8 +170,14 @@ weighted_residual_suffstats <- function(X, y, ZI, weights,
     Zty <- as.numeric(matrixMultiply(ZI, matrix(wy, ncol = 1), transA = TRUE))
     rm(Zw)
 
-    Zinv_ZtX <- solve_with_ridge(ZtZ, ZtX, ridge = ridge)
-    Zinv_Zty <- solve_with_ridge(ZtZ, matrix(Zty, ncol = 1), ridge = ridge)
+    if (projection_solver == "ginv") {
+      Zinv <- MASS::ginv(as.matrix(ZtZ), tol = ginv_tol)
+      Zinv_ZtX <- CppMatrix::matrixMultiply(Zinv, ZtX)
+      Zinv_Zty <- CppMatrix::matrixMultiply(Zinv, matrix(Zty, ncol = 1))
+    } else {
+      Zinv_ZtX <- solve_with_ridge(ZtZ, ZtX, ridge = ridge)
+      Zinv_Zty <- solve_with_ridge(ZtZ, matrix(Zty, ncol = 1), ridge = ridge)
+    }
 
     XtX <- XtX - matrixMultiply(ZtX, Zinv_ZtX, transA = TRUE)
     Xty <- Xty - as.numeric(matrixMultiply(ZtX, Zinv_Zty, transA = TRUE))

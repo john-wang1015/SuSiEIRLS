@@ -1,5 +1,6 @@
 #' Binary logistic IRLS-SuSiE path
 #' @inheritParams SuSiE_IRLS
+#' @param family A binomial-logit family object.
 #' @export
 Run_Binary <- function(X, y, Z = NULL,
                     family = binomial(link = "logit"),weight_cutoff=0.005,
