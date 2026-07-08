@@ -11,3 +11,8 @@
 ^src/.*\.so$
 ^src/.*\.dll$
 ^src/symbols\.rds$
+^example/.*\.rds$
+^example/.*\.log$
+^example/.*\.err$
+^example/.*\.txt$
+^example/.*\.csv$

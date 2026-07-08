@@ -30,7 +30,11 @@ SuSiE_IRLS(
   qgam_discrete = FALSE,
   susie.iter = 30,
   ridge = 1e-06,
+  zip_theta = NULL,
+  zip_b = 0,
+  zip_info = c("expected", "observed"),
   logit_method = c("pg", "glm"),
+  clm_link = c("logit", "probit", "cauchit", "cloglog", "loglog"),
   L.init = 1,
   init_cor_method = NULL,
   refit_noncs = TRUE,
@@ -50,8 +54,10 @@ SuSiE_IRLS(
 
 \item{family}{A GLM or mgcv family object (e.g., \code{binomial(link="logit")}),
 the string \code{"negbin"} for \code{mgcv::nb()}, or the string
-\code{"qgam"} for quantile-GAM IRLS, or \code{"ocat"} /
-\code{mgcv::ocat(R = )} for ordered-categorical cumulative-logit
+\code{"qgam"} for quantile-GAM IRLS, \code{"zip"} for
+\code{mgcv::ziP()}, or \code{"clm"} /
+\code{"ocat"} / \code{mgcv::ocat(R = )} for ordered-categorical
+cumulative-link
 outcomes. Ignored when \code{y} is a
 \code{Surv} object (Cox PH is used).}
 
@@ -102,8 +108,23 @@ residual variance.}
 \item{ridge}{Diagonal ridge added to the Cox information matrix for positive
 definiteness. Used only in the Cox path. Default 1e-6.}
 
+\item{zip_theta}{Optional raw two-parameter \code{theta} vector passed to
+\code{mgcv::ziP(theta = )} when \code{family = "zip"}. If NULL, theta is
+estimated by \code{mgcv}.}
+
+\item{zip_b}{Non-negative \code{b} parameter passed to \code{mgcv::ziP()} when
+\code{family = "zip"}. Default 0.}
+
+\item{zip_info}{Curvature used by the \code{mgcv::ziP()} local quadratic.
+\code{"expected"} uses Fisher information; \code{"observed"} uses the
+observed Hessian.}
+
 \item{logit_method}{Method for binomial-logit outcomes. \code{"pg"} uses
 \code{Run_Binary}; \code{"glm"} uses the general GLM IRLS path.}
+
+\item{clm_link}{Link for ordered-categorical \code{family = "clm"}
+outcomes. Default \code{"logit"}. Other supported values are
+\code{"probit"}, \code{"cauchit"}, \code{"cloglog"}, and \code{"loglog"}.}
 
 \item{L.init}{Number of SNPs used in the initial low-dimensional warm start.
 Default 1.}

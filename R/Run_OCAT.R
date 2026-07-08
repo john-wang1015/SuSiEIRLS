@@ -66,14 +66,15 @@
   stats::as.formula(paste("y ~", paste(.ocat_backtick(rhs), collapse = " + ")))
 }
 
-.ocat_fit_explicit <- function(y, pred, alpha_start = NULL) {
+.ocat_fit_explicit <- function(y, pred, alpha_start = NULL,
+                               clm_link = "logit") {
   dat <- cbind(data.frame(y = y), pred)
   rhs <- colnames(pred)
   start <- NULL
   if (!is.null(alpha_start)) {
     start <- c(alpha_start, rep(0, length(rhs)))
   }
-  ordinal::clm(.ocat_formula(rhs), data = dat, link = "logit",
+  ordinal::clm(.ocat_formula(rhs), data = dat, link = clm_link,
                threshold = "flexible", start = start, model = TRUE)
 }
 
@@ -100,7 +101,67 @@
   G
 }
 
-.ocat_prob_parts <- function(y_int, eta, alpha, eps = 1e-12) {
+.ocat_link_parts <- function(t, clm_link) {
+  if (identical(clm_link, "logit")) {
+    Fv <- stats::plogis(t)
+    fv <- stats::dlogis(t)
+    fp <- fv * (1 - 2 * Fv)
+  } else if (identical(clm_link, "probit")) {
+    Fv <- stats::pnorm(t)
+    fv <- stats::dnorm(t)
+    fp <- -t * fv
+  } else if (identical(clm_link, "cauchit")) {
+    Fv <- stats::pcauchy(t)
+    fv <- stats::dcauchy(t)
+    fp <- -2 * t / (pi * (1 + t^2)^2)
+  } else if (identical(clm_link, "cloglog")) {
+    et <- exp(pmin(t, 35))
+    Fv <- 1 - exp(-et)
+    fv <- exp(pmin(t - et, 700))
+    fp <- fv * (1 - et)
+  } else if (identical(clm_link, "loglog")) {
+    ent <- exp(pmin(-t, 35))
+    Fv <- exp(-ent)
+    fv <- exp(pmin(-t - ent, 700))
+    fp <- fv * (ent - 1)
+  } else {
+    stop("Unsupported clm_link. Use logit, probit, cauchit, cloglog, or loglog.")
+  }
+  ii <- !is.finite(t)
+  if (any(ii)) {
+    Fv[ii & t < 0] <- 0
+    Fv[ii & t > 0] <- 1
+    fv[ii] <- 0
+    fp[ii] <- 0
+  }
+  Fv <- pmin(pmax(Fv, 0), 1)
+  fv[!is.finite(fv)] <- 0
+  fp[!is.finite(fp)] <- 0
+  list(F = Fv, f = fv, fp = fp)
+}
+
+.ocat_solve_with_ridge <- function(A, B, ridge = 1e-6) {
+  A <- as.matrix(A)
+  B <- as.matrix(B)
+  rr <- if (is.finite(ridge) && ridge > 0) {
+    ridge * c(1, 100, 10000, 1e6)
+  } else {
+    c(1e-8, 1e-6, 1e-4, 1e-2)
+  }
+  for (r in rr) {
+    Ar <- A
+    diag(Ar) <- diag(Ar) + r
+    if (qr(Ar, tol = sqrt(.Machine$double.eps))$rank == ncol(Ar)) {
+      return(CppMatrix::matrixSolve(Ar, B))
+    }
+  }
+  Ar <- A
+  diag(Ar) <- diag(Ar) + utils::tail(rr, 1)
+  MASS::ginv(Ar) %*% B
+}
+
+.ocat_prob_parts <- function(y_int, eta, alpha, clm_link = "logit",
+                             eps = 1e-12) {
   n <- length(y_int)
   K <- length(alpha)
   cuts <- c(-Inf, alpha, Inf)
@@ -110,12 +171,14 @@
   tl <- lo - eta
   tu <- hi - eta
 
-  Fl <- stats::plogis(tl)
-  Fu <- stats::plogis(tu)
-  fl <- stats::dlogis(tl)
-  fu <- stats::dlogis(tu)
-  fpl <- fl * (1 - 2 * Fl)
-  fpu <- fu * (1 - 2 * Fu)
+  lp <- .ocat_link_parts(tl, clm_link = clm_link)
+  up <- .ocat_link_parts(tu, clm_link = clm_link)
+  Fl <- lp$F
+  Fu <- up$F
+  fl <- lp$f
+  fu <- up$f
+  fpl <- lp$fp
+  fpu <- up$fp
 
   pr <- pmax(Fu - Fl, eps)
   A <- fl - fu
@@ -157,6 +220,7 @@
 }
 
 ocat_suffstats <- function(X, y_int, eta, Z, alpha,
+                           clm_link = "logit",
                            n_threads = 1, ridge = 1e-6,
                            block_size = 10000L) {
   X <- as.matrix(X)
@@ -165,7 +229,8 @@ ocat_suffstats <- function(X, y_int, eta, Z, alpha,
   K <- length(alpha)
   q <- ncol(Z)
 
-  pp <- .ocat_prob_parts(y_int = y_int, eta = eta, alpha = alpha)
+  pp <- .ocat_prob_parts(y_int = y_int, eta = eta, alpha = alpha,
+                         clm_link = clm_link)
   h <- pmax(as.numeric(pp$h_eta), 1e-8)
   sw <- sqrt(h)
 
@@ -217,9 +282,9 @@ ocat_suffstats <- function(X, y_int, eta, Z, alpha,
     UN <- TtU
   }
 
-  HNN_inv_HNX <- solve_with_ridge(HNN, t(HXN), ridge = ridge)
-  HNN_inv_HNE <- solve_with_ridge(HNN, HNE, ridge = ridge)
-  HNN_inv_UN <- solve_with_ridge(HNN, matrix(UN, ncol = 1), ridge = ridge)
+  HNN_inv_HNX <- .ocat_solve_with_ridge(HNN, t(HXN), ridge = ridge)
+  HNN_inv_HNE <- .ocat_solve_with_ridge(HNN, HNE, ridge = ridge)
+  HNN_inv_UN <- .ocat_solve_with_ridge(HNN, matrix(UN, ncol = 1), ridge = ridge)
 
   XtX <- XtX - CppMatrix::matrixMultiply(HXN, HNN_inv_HNX)
   XtE <- as.numeric(XtE - CppMatrix::matrixMultiply(HXN, HNN_inv_HNE))
@@ -250,12 +315,19 @@ ocat_suffstats <- function(X, y_int, eta, Z, alpha,
 #' @param Z An n by q matrix or vector of covariates. If NULL, only the
 #'   ordered-categorical threshold nuisance parameters are projected out.
 #' @param family An ordered-categorical family object, typically
-#'   \code{mgcv::ocat(R = )}, or the string \code{"ocat"} / \code{"ordinal"}.
+#'   \code{mgcv::ocat(R = )}, or the string \code{"clm"} / \code{"ocat"} /
+#'   \code{"ordinal"}.
+#' @param clm_link Link used by \code{ordinal::clm()} and the local
+#'   cumulative-link score statistics. Supported values are \code{"logit"},
+#'   \code{"probit"}, \code{"cauchit"}, \code{"cloglog"}, and
+#'   \code{"loglog"}.
 #' @param ridge Diagonal ridge added to the nuisance and projected information
 #'   matrices for numerical stability.
 #' @export
 Run_OCAT <- function(X, y, Z = NULL,
                      family = NULL,
+                     clm_link = c("logit", "probit", "cauchit",
+                                  "cloglog", "loglog"),
                      L, max.iter, min.iter, max.eps, susie.iter,
                      verbose = TRUE, n_threads = 1, coverage = 0.9,
                      estimate_residual_variance = TRUE,
@@ -271,6 +343,7 @@ Run_OCAT <- function(X, y, Z = NULL,
 
   n <- NROW(y)
   p <- ncol(X)
+  clm_link <- match.arg(clm_link)
   if (is.null(colnames(X))) colnames(X) <- paste0("X", seq_len(p))
   suff_block_size <- validate_suff_block_size(suff_block_size)
   y_info <- .ocat_prepare_response(y, family = family)
@@ -287,7 +360,7 @@ Run_OCAT <- function(X, y, Z = NULL,
   q <- ncol(Z)
 
   pred <- .ocat_predictor_data(Z = Z, n = n)
-  fit_final <- .ocat_fit_explicit(y, pred)
+  fit_final <- .ocat_fit_explicit(y, pred, clm_link = clm_link)
   eta <- .ocat_linear_predictor(fit_final, pred, n = n)
 
   alpha <- .ocat_nuisance_coef(fit_final, q = q)
@@ -306,6 +379,7 @@ Run_OCAT <- function(X, y, Z = NULL,
 
     stat <- ocat_suffstats(
       X = X, y_int = y_int, eta = eta, Z = Z, alpha = fit_final$alpha,
+      clm_link = clm_link,
       n_threads = n_threads, ridge = ridge, block_size = suff_block_size
     )
 
@@ -371,7 +445,9 @@ Run_OCAT <- function(X, y, Z = NULL,
     }
 
     pred_refit <- .ocat_predictor_data(Z = Z, Xextra = XCS_refit, n = n)
-    fit_final <- .ocat_fit_explicit(y, pred_refit, alpha_start = fit_final$alpha)
+    fit_final <- .ocat_fit_explicit(
+      y, pred_refit, alpha_start = fit_final$alpha, clm_link = clm_link
+    )
     eta <- .ocat_linear_predictor(fit_final, pred_refit, n = n)
 
     alpha <- .ocat_nuisance_coef(fit_final, q = q)
@@ -405,13 +481,16 @@ Run_OCAT <- function(X, y, Z = NULL,
       fitJoint = fit_final,
       main_index = MainIndex,
       JointCoef = G,
+      clm_link = clm_link,
       n_eff = if (!is.null(stat)) stat$n_eff else NA_real_
     ))
   }
 
   if (!is.null(XCS)) {
     pred <- .ocat_predictor_data(Z = Z, Xextra = XCS, n = n)
-    fit_final <- .ocat_fit_explicit(y, pred, alpha_start = fit_final$alpha)
+    fit_final <- .ocat_fit_explicit(
+      y, pred, alpha_start = fit_final$alpha, clm_link = clm_link
+    )
   }
 
   G <- .ocat_coef_table(fit_final)
@@ -422,7 +501,7 @@ Run_OCAT <- function(X, y, Z = NULL,
     plot(g, type = "o", col = "black", pch = 16,
          xlab = "Iteration",
          ylab = "Max Parameter Change",
-         main = "Convergence Trace (Ordered Categorical, Logit)")
+         main = sprintf("Convergence Trace (CLM, %s)", clm_link))
     for (i in seq_along(g)) {
       graphics::text(x = i, y = g[i],
                      labels = formatC(g[i], format = "e", digits = 1),
@@ -439,6 +518,7 @@ Run_OCAT <- function(X, y, Z = NULL,
     fitJoint = fit_final,
     main_index = MainIndex,
     JointCoef = G,
+    clm_link = clm_link,
     n_eff = if (!is.null(stat)) stat$n_eff else NA_real_,
     score_diagnostics = if (!is.null(stat)) {
       stat[c("min_pr", "min_h", "med_h", "max_h")]
@@ -447,3 +527,7 @@ Run_OCAT <- function(X, y, Z = NULL,
     }
   )
 }
+
+#' @rdname Run_OCAT
+#' @export
+Run_CLM <- Run_OCAT

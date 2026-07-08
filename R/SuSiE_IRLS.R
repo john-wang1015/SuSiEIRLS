@@ -15,12 +15,17 @@
 #' @param Z An n by q matrix or vector of covariates. If NULL, only an intercept is used.
 #' @param family A GLM or mgcv family object (e.g., \code{binomial(link="logit")}),
 #'   the string \code{"negbin"} for \code{mgcv::nb()}, or the string
-#'   \code{"qgam"} for quantile-GAM IRLS, or \code{"ocat"} /
-#'   \code{mgcv::ocat(R = )} for ordered-categorical cumulative-logit
+#'   \code{"qgam"} for quantile-GAM IRLS, \code{"zip"} for
+#'   \code{mgcv::ziP()}, or \code{"clm"} /
+#'   \code{"ocat"} / \code{mgcv::ocat(R = )} for ordered-categorical
+#'   cumulative-link
 #'   outcomes. Ignored when \code{y} is a
 #'   \code{Surv} object (Cox PH is used).
 #' @param logit_method Method for binomial-logit outcomes. \code{"pg"} uses
 #'   \code{Run_Binary}; \code{"glm"} uses the general GLM IRLS path.
+#' @param clm_link Link for ordered-categorical \code{family = "clm"}
+#'   outcomes. Default \code{"logit"}. Other supported values are
+#'   \code{"probit"}, \code{"cauchit"}, \code{"cloglog"}, and \code{"loglog"}.
 #' @param L Number of single effects in SuSiE. Default 10.
 #' @param L.init Number of SNPs used in the initial low-dimensional warm start.
 #'   Default 1.
@@ -50,6 +55,14 @@
 #' @param qgam_discrete Logical, passed to \code{qgam::qgam(discrete = )}.
 #' @param ridge Diagonal ridge added to the Cox information matrix for positive
 #'   definiteness. Used only in the Cox path. Default 1e-6.
+#' @param zip_theta Optional raw two-parameter \code{theta} vector passed to
+#'   \code{mgcv::ziP(theta = )} when \code{family = "zip"}. If NULL, theta is
+#'   estimated by \code{mgcv}.
+#' @param zip_b Non-negative \code{b} parameter passed to \code{mgcv::ziP()} when
+#'   \code{family = "zip"}. Default 0.
+#' @param zip_info Curvature used by the \code{mgcv::ziP()} local quadratic.
+#'   \code{"expected"} uses Fisher information; \code{"observed"} uses the
+#'   observed Hessian.
 #' @param init_cor_method Deprecated and ignored. The greedy warm start now
 #'   ranks variables by `abs(crossprod(X, residual))`.
 #' @param refit_noncs Logical. If TRUE, add a one-dimensional non-CS residual
@@ -85,7 +98,7 @@
 #' @importFrom survival coxph Surv
 #' @importFrom CppMatrix matrixMultiply matrixVectorMultiply matrixCor
 #' @importFrom MASS glm.nb negative.binomial
-#' @importFrom mgcv gam bam nb tw betar scat
+#' @importFrom mgcv gam bam nb tw betar scat ziP
 #' @importFrom ordinal clm
 #' @importFrom SuSiE4I blockwise_crossprod large_scale
 #' @export
@@ -105,7 +118,12 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
                        qgam_discrete = FALSE,
                        susie.iter = 30,
                        ridge = 1e-6,
+                       zip_theta = NULL,
+                       zip_b = 0,
+                       zip_info = c("expected", "observed"),
                        logit_method = c("pg", "glm"),
+                       clm_link = c("logit", "probit", "cauchit",
+                                    "cloglog", "loglog"),
                        L.init = 1,
                        init_cor_method = NULL,
                        refit_noncs = TRUE,
@@ -177,6 +195,14 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
     family_string %in% c("negbin", "nb", "negative.binomial")
   is_qgam_flag <- !is.null(family_string) &&
     family_string %in% c("qgam", "quantile", "quantile.gam", "quantile_gam")
+  is_zip_flag <- (!is.null(family_string) &&
+    family_string %in% c("zip", "zero.inflated.poisson",
+                         "zero_inflated_poisson", "zero inflated poisson",
+                         "zero-inflated-poisson", "zeroinflatedpoisson")) ||
+    .zip_is_family(family)
+  is_clm_flag <- !is.null(family_string) &&
+    family_string %in% c("clm", "cumulative.link", "cumulative_link",
+                         "cumulative")
   is_ocat_flag <- (!is.null(family_string) &&
     family_string %in% c("ocat", "ordinal", "ordered", "ordered.categorical",
                          "ordered_categorical")) ||
@@ -184,6 +210,8 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
   # Cox is identified by a Surv-typed response; family is then ignored.
   is_cox_flag <- inherits(y, "Surv")
   logit_method <- match.arg(logit_method)
+  clm_link <- match.arg(clm_link)
+  zip_info <- match.arg(zip_info)
   rv_upper_default <- if (is.null(residual_variance_upperbound)) 1 else residual_variance_upperbound
   suff_block_size <- validate_suff_block_size(suff_block_size)
 
@@ -252,6 +280,51 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
     )
   }
 
+  if (is_zip_flag) {
+    if (!is.null(zip_theta)) {
+      if (!is.numeric(zip_theta) || length(zip_theta) != 2L ||
+          any(!is.finite(zip_theta))) {
+        stop("zip_theta must be NULL or a finite numeric vector of length 2.")
+      }
+    }
+    if (!is.numeric(zip_b) || length(zip_b) != 1L ||
+        !is.finite(zip_b) || zip_b < 0) {
+      stop("zip_b must be a non-negative finite numeric scalar.")
+    }
+    zip_family <- if (is.character(family)) {
+      mgcv::ziP(theta = zip_theta, b = zip_b)
+    } else {
+      family
+    }
+    return(
+      Run_ZIP(
+        X = X, y = y, Z = Z,
+        family = zip_family,
+        zip_info = zip_info,
+        L = L,
+        max.iter = max.iter,
+        min.iter = min.iter,
+        max.eps = max.eps,
+        susie.iter = susie.iter,
+        verbose = verbose,
+        n_threads = n_threads,
+        coverage = coverage,
+        weight_cutoff = weight_cutoff,
+        scaled_prior_variance = scaled_prior_variance,
+        estimate_residual_variance = estimate_residual_variance,
+        residual_variance = residual_variance,
+        residual_variance_lowerbound = residual_variance_lowerbound,
+        residual_variance_upperbound = rv_upper_default,
+        L.init = L.init,
+        init_cor_method = init_cor_method,
+        refit_noncs = refit_noncs,
+        noncs_var = noncs_var,
+        suff_block_size = suff_block_size,
+        ...
+      )
+    )
+  }
+
   if (is_qgam_flag) {
     return(
       Run_QGAM(
@@ -285,10 +358,10 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
     )
   }
 
-  if (is_ocat_flag) {
+  if (is_clm_flag || is_ocat_flag) {
     return(
       Run_OCAT(
-        X = X, y = y, Z = Z, family = family,
+        X = X, y = y, Z = Z, family = family, clm_link = clm_link,
         L = L,
         max.iter = max.iter,
         min.iter = min.iter,
@@ -314,7 +387,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
   }
 
   if (is.character(family)) {
-    stop("Unsupported family string. Use \"negbin\", \"qgam\", \"ocat\", or a GLM/mgcv family object.")
+    stop("Unsupported family string. Use \"negbin\", \"zip\", \"qgam\", \"clm\", \"ocat\", or a GLM/mgcv family object.")
   }
 
   if (is_logit_binomial(family) && identical(logit_method, "pg")) {
