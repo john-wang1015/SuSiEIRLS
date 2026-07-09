@@ -122,9 +122,9 @@ summarize_diagnostics <- function(result_df) {
 family_name <- "ocat"
 link_name <- "probit"
 ns <- c(250L, 500L, 1000L)
-nrep <- 50L
+nrep <- 500L
 irls_threads <- 1L
-out_file <- file.path("example", "final_highcorr_ordinal_clm_probit_50_results.rds")
+out_file <- file.path("example", "final_highcorr_ordinal_clm_probit_results.rds")
 
 p <- 50L
 q <- 10L
@@ -152,6 +152,17 @@ cutoff_probs <- list(
   balanced = c(0.25, 0.25, 0.25, 0.25),
   imbalanced = c(0.15, 0.30, 0.45, 0.10)
 )
+cutoff_filter <- Sys.getenv("ORD_CUTOFF", "")
+if (nzchar(cutoff_filter)) {
+  if (!(cutoff_filter %in% names(cutoff_probs))) {
+    stop("ORD_CUTOFF must be one of balanced, imbalanced")
+  }
+  cutoff_probs <- cutoff_probs[cutoff_filter]
+  out_file <- file.path(
+    "example",
+    paste0("final_highcorr_ordinal_clm_probit_", cutoff_filter, "_results.rds")
+  )
+}
 
 if (p != dim_cs * dim_ar) stop("p must equal dim_cs * dim_ar")
 S_within <- stats::toeplitz(rho_within ^ (0:(dim_cs - 1L)))

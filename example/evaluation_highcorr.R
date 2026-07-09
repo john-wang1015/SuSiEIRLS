@@ -78,6 +78,40 @@ nb_uni_fun <- function(x, y, e, prior_variance,
        prior_variance = m1^2 + v1, intercept = 0)
 }
 
+tweedie_uni_fun <- function(x, y, e, prior_variance,
+                            estimate_intercept = 0, ...) {
+  v0 <- prior_variance
+  tw_p <- attr(y, "tw_p")
+  if (is.null(tw_p) || !is.finite(tw_p) || tw_p <= 1 || tw_p >= 2) {
+    stop("Tweedie power attribute is missing or invalid")
+  }
+  tw_phi <- attr(y, "tw_phi")
+  if (is.null(tw_phi) || !is.finite(tw_phi) || tw_phi <= 0) {
+    stop("Tweedie phi attribute is missing or invalid")
+  }
+  off <- attr(y, "hat_etaZ")
+  if (is.null(off)) off <- rep(0, length(y))
+  e <- as.numeric(e) + as.numeric(off)
+  fam <- statmod::tweedie(var.power = tw_p, link.power = 0)
+  fit <- stats::glm(y ~ x + offset(e), family = fam)
+  co <- summary(fit, dispersion = tw_phi)$coefficients
+  b <- co["x", "Estimate"]
+  s <- co["x", "Std. Error"]
+  if (!is.finite(b) || !is.finite(s) || s <= 0) {
+    return(list(mu = 0, var = v0, lbf = -Inf,
+                prior_variance = v0, intercept = 0))
+  }
+  z <- b / s
+  lbf <- 0.5 * log(s^2 / (v0 + s^2)) +
+    0.5 * z^2 * v0 / (v0 + s^2)
+  lrt <- (fit$null.deviance - fit$deviance) / tw_phi
+  lbf <- lbf - 0.5 * z^2 + 0.5 * lrt
+  v1 <- 1 / (1 / v0 + 1 / s^2)
+  m1 <- v1 * b / s^2
+  list(mu = m1, var = v1, lbf = lbf,
+       prior_variance = m1^2 + v1, intercept = 0)
+}
+
 surv_uni_fun <- function(x, y, e, prior_variance,
                          estimate_intercept = 0, ...) {
   v0 <- prior_variance
@@ -140,6 +174,25 @@ fit_cox_hat_eta <- function(y, Z) {
   fit <- survival::coxph(survival::Surv(time, status) ~ ., data = dat,
                          ties = "breslow")
   as.numeric(stats::predict(fit, type = "lp"))
+}
+
+fit_tweedie_hat_eta <- function(y, Z, tw_p = NULL) {
+  if (!is.null(tw_p) && (!is.finite(tw_p) || tw_p <= 1 || tw_p >= 2)) {
+    stop("Tweedie power must be in (1, 2)")
+  }
+  Zdf <- as.data.frame(Z)
+  colnames(Zdf) <- make.names(colnames(Zdf), unique = TRUE)
+  fam <- mgcv::tw(theta = tw_p, link = "log")
+  dat <- data.frame(y = y, Zdf, check.names = FALSE)
+  form <- stats::reformulate(colnames(Zdf), response = "y")
+  fit <- mgcv::gam(form, data = dat, family = fam, method = "REML")
+  p_hat <- as.numeric(fit$family$getTheta(TRUE))
+  phi_hat <- as.numeric(summary(fit)$scale)
+  list(
+    eta = as.numeric(as.matrix(Zdf) %*% stats::coef(fit)[-1L]),
+    p = p_hat,
+    phi = phi_hat
+  )
 }
 
 ibss_x_main_index <- function(fit, X, p, coverage = 0.9,

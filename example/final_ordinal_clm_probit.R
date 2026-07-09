@@ -134,17 +134,6 @@ true_idx <- c(5L, 20L, 35L)
 varZ <- 0.2
 varX_ratio_vec <- c(1, 0.5)
 case_vec <- c("independent", "mediator", "interaction")
-case_filter <- Sys.getenv("ORD_CASE", "")
-if (nzchar(case_filter)) {
-  if (!(case_filter %in% case_vec)) {
-    stop("ORD_CASE must be one of independent, mediator, interaction")
-  }
-  case_vec <- case_filter
-  out_file <- file.path(
-    "example",
-    paste0("final_ordinal_clm_probit_", case_filter, "_results.rds")
-  )
-}
 rho_x <- 0.5
 rho_z <- 0.2
 r_m <- 0.25
@@ -159,6 +148,17 @@ cutoff_probs <- list(
   balanced = c(0.25, 0.25, 0.25, 0.25),
   imbalanced = c(0.15, 0.30, 0.45, 0.10)
 )
+cutoff_filter <- Sys.getenv("ORD_CUTOFF", "")
+if (nzchar(cutoff_filter)) {
+  if (!(cutoff_filter %in% names(cutoff_probs))) {
+    stop("ORD_CUTOFF must be one of balanced, imbalanced")
+  }
+  cutoff_probs <- cutoff_probs[cutoff_filter]
+  out_file <- file.path(
+    "example",
+    paste0("final_ordinal_clm_probit_", cutoff_filter, "_results.rds")
+  )
+}
 
 Sx <- stats::toeplitz(rho_x ^ (0:(p - 1L)))
 Hx <- chol(Sx)

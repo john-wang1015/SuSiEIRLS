@@ -6,24 +6,28 @@ require(statmod)
 require(susieR)
 require(SuSiEIRLS)
 
-source(file.path("example", "evaluation.R"))
+source(file.path("example", "evaluation_highcorr.R"))
 
 family_name <- "tw"
 ns <- c(250L, 500L, 1000L)
 nrep <- 500L
 irls_threads <- 1L
-out_file <- file.path("example", "final_tw_results.rds")
+out_file <- file.path("example", "final_highcorr_tw_results.rds")
 
 p <- 50L
 q <- 10L
+dim_cs <- 5L
+dim_ar <- 10L
 L <- 5L
 coverage <- 0.9
 true_idx <- c(5L, 20L, 35L)
 varZ <- 0.2
 varX_ratio_vec <- c(1, 0.5)
 case_vec <- c("independent", "mediator", "interaction")
-rho_x <- 0.5
+rho_ar <- 0.3
+rho_within <- 0.999
 rho_z <- 0.2
+x_structure <- "ar1_0p3_by10_ar1_0p999_by5"
 r_m <- 0.25
 r_i <- 0.25
 ebic_gamma <- 1
@@ -41,13 +45,18 @@ if (nzchar(zero_filter)) {
     stop("TW_ZERO must be one of zero05, zero30")
   }
   target_zero_grid <- unname(zero_map[zero_filter])
-  out_file <- file.path("example", paste0("final_tw_", zero_filter, "_results.rds"))
+  out_file <- file.path("example", paste0("final_highcorr_tw_", zero_filter, "_results.rds"))
 }
 
-Sx <- stats::toeplitz(rho_x ^ (0:(p - 1L)))
+if (p != dim_cs * dim_ar) stop("p must equal dim_cs * dim_ar")
+S_within <- stats::toeplitz(rho_within ^ (0:(dim_cs - 1L)))
+S_ar <- stats::toeplitz(rho_ar ^ (0:(dim_ar - 1L)))
+Sx <- kronecker(S_ar, S_within)
 Hx <- chol(Sx)
 Sz <- stats::toeplitz(rho_z ^ (0:(q - 1L)))
 Hz <- chol(Sz)
+x_cs_id <- rep(seq_len(dim_ar), each = dim_cs)
+true_cs <- sort(unique(x_cs_id[true_idx]))
 ser_tw <- logisticsusie::ser_from_univariate(tweedie_uni_fun)
 
 rows <- list()
@@ -73,7 +82,7 @@ for (zz in seq_along(target_zero_grid)) {
           attempt <- attempt + 1L
           if (attempt > nrep + 200L) stop("Too many failed attempts in Tweedie simulation")
           rep_id <- rep_success + 1L
-          seed <- 5200000L + zz * 1000000L + n * 1000L +
+          seed <- 9200000L + zz * 1000000L + n * 1000L +
             match(case, case_vec) * 100000L + rr * 10000L + attempt
           stage <- "simulate"
 
@@ -84,13 +93,11 @@ for (zz in seq_along(target_zero_grid)) {
             X <- matrix(stats::rnorm(n * p), n, p)
             X <- CppMatrix::matrixMultiply(X, Hx)
             X <- as.matrix(scale(X))
-            X <- X[, sample.int(p), drop = FALSE]
             colnames(X) <- paste0("X", seq_len(p))
 
             E <- matrix(stats::rnorm(n * q), n, q)
             E <- CppMatrix::matrixMultiply(E, Hz)
             E <- as.matrix(scale(E))
-            E <- E[, sample.int(q), drop = FALSE]
             Z <- E
             colnames(Z) <- paste0("Z", seq_len(q))
 
@@ -157,6 +164,7 @@ for (zz in seq_along(target_zero_grid)) {
               evals$family <- family_name
               evals$setting <- setting
               evals$structure <- out_structure
+              evals$x_structure <- x_structure
               evals$case <- case
               evals$varX_ratio <- varX_ratio
               evals$varX <- varX
@@ -166,6 +174,8 @@ for (zz in seq_along(target_zero_grid)) {
               evals$attempt <- attempt
               evals$seed <- seed
               evals$true_signal <- paste(true_idx, collapse = ",")
+              evals$true_cs <- paste(true_cs, collapse = ",")
+              evals$n_true_cs <- length(true_cs)
               evals$pve_main <- pve_main
               evals$pve_z <- pve_z
               evals$pve_int <- pve_int
@@ -207,7 +217,7 @@ for (zz in seq_along(target_zero_grid)) {
             if (!is.finite(j)) j <- which.min(abs(fit_cv$lambda - fit_cv$lambda.1se))
             bhat <- as.numeric(fit_cv$glmnet.fit$beta[, j])
             sel <- which(is.finite(bhat[seq_len(p)]) & bhat[seq_len(p)] != 0)
-            add_common(eval_selected(sel, true_idx), "glmnet_cv_1se", z_time + proc.time()[["elapsed"]] - t1)
+            add_common(eval_selected_xcs(sel, true_idx, x_cs_id, p), "glmnet_cv_1se", z_time + proc.time()[["elapsed"]] - t1)
 
             stage <- "glmnet_path"
             t1 <- proc.time()[["elapsed"]]
@@ -225,7 +235,7 @@ for (zz in seq_along(target_zero_grid)) {
             if (!is.finite(j)) j <- which.min(abs(fit_path$lambda - bb$lambda))
             bhat <- as.numeric(fit_path$beta[, j])
             sel <- which(is.finite(bhat[seq_len(p)]) & bhat[seq_len(p)] != 0)
-            evals <- eval_selected(sel, true_idx)
+            evals <- eval_selected_xcs(sel, true_idx, x_cs_id, p)
             evals$qbic <- bb$ebic
             evals$qphi <- bb$phi
             evals$ebic_df <- bb$df
@@ -236,7 +246,7 @@ for (zz in seq_along(target_zero_grid)) {
             if (!is.finite(j)) j <- which.min(abs(fit_path$lambda - bb$lambda))
             bhat <- as.numeric(fit_path$beta[, j])
             sel <- which(is.finite(bhat[seq_len(p)]) & bhat[seq_len(p)] != 0)
-            evals <- eval_selected(sel, true_idx)
+            evals <- eval_selected_xcs(sel, true_idx, x_cs_id, p)
             evals$ebic <- bb$ebic
             evals$ebic_df <- bb$df
             evals$ebic_gamma <- bb$gamma
@@ -260,7 +270,7 @@ for (zz in seq_along(target_zero_grid)) {
               verbose = FALSE
             )
             pip <- fit_irls$fitX$pip[seq_len(p)]
-            evals <- eval_cs_pip(fit_irls$main_index, pip, true_idx, p, coverage)
+            evals <- eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage)
             evals$theta_hat <- if (!is.null(fit_irls$theta)) fit_irls$theta else NA_real_
             add_common(evals, "irls", proc.time()[["elapsed"]] - t1)
 
@@ -279,7 +289,7 @@ for (zz in seq_along(target_zero_grid)) {
               verbose = FALSE
             )
             pip <- fit_irls$fitX$pip[seq_len(p)]
-            evals <- eval_cs_pip(fit_irls$main_index, pip, true_idx, p, coverage)
+            evals <- eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage)
             evals$theta_hat <- if (!is.null(fit_irls$theta)) fit_irls$theta else NA_real_
             add_common(evals, "irls_fixed_sigma2_1", proc.time()[["elapsed"]] - t1)
 
@@ -296,7 +306,7 @@ for (zz in seq_along(target_zero_grid)) {
             )
             main_index <- ibss_x_main_index(fit_ibss, X, p, coverage)
             pip <- fit_ibss$pip[seq_len(p)]
-            add_common(eval_cs_pip(main_index, pip, true_idx, p, coverage), "ibss_oracle", proc.time()[["elapsed"]] - t1)
+            add_common(eval_main_index_xcs(main_index, pip, true_idx, x_cs_id, p, coverage), "ibss_oracle", proc.time()[["elapsed"]] - t1)
 
             stage <- "ibss_hat_offset"
             t1 <- proc.time()[["elapsed"]]
@@ -315,7 +325,7 @@ for (zz in seq_along(target_zero_grid)) {
             )
             main_index <- ibss_x_main_index(fit_ibss, X, p, coverage)
             pip <- fit_ibss$pip[seq_len(p)]
-            add_common(eval_cs_pip(main_index, pip, true_idx, p, coverage), "ibss_hat_offset", z_time + proc.time()[["elapsed"]] - t1)
+            add_common(eval_main_index_xcs(main_index, pip, true_idx, x_cs_id, p, coverage), "ibss_hat_offset", z_time + proc.time()[["elapsed"]] - t1)
 
             for (ii in seq_along(rows0)) {
               k <- k + 1L
@@ -329,7 +339,8 @@ for (zz in seq_along(target_zero_grid)) {
             h <<- h + 1L
             fails[[h]] <<- data.frame(
               family = family_name, setting = setting, structure = out_structure,
-              case = case, varX_ratio = varX_ratio, varX = varX, varZ = varZ,
+              x_structure = x_structure, case = case, varX_ratio = varX_ratio,
+              varX = varX, varZ = varZ,
               n = n, rep = rep_id, attempt = attempt, seed = seed,
               stage = stage, error = conditionMessage(e), stringsAsFactors = FALSE
             )
@@ -344,7 +355,8 @@ for (zz in seq_along(target_zero_grid)) {
 
 result_df <- bind_rows_fill(rows)
 sim_cols <- c("family", "seed", "n", "setting", "structure", "case",
-              "varX_ratio", "varX", "varZ", "true_signal", "pve_main",
+              "x_structure", "varX_ratio", "varX", "varZ", "true_signal",
+              "true_cs", "n_true_cs", "pve_main",
               "pve_z", "pve_int", "pve_total", "pve_obs_total",
               "var_eta", "vare", "tw_mean", "mu_mean", "tw_p", "tw_phi",
               "target_zero", "observed_zero")
@@ -362,7 +374,9 @@ settings <- list(
   L = L, coverage = coverage, true_idx = true_idx, varZ = varZ,
   varX_ratio_vec = varX_ratio_vec, tw_mean = tw_mean, tw_p = tw_p,
   target_zero_grid = target_zero_grid,
-  case_vec = case_vec, rho_x = rho_x, rho_z = rho_z,
+  case_vec = case_vec, dim_cs = dim_cs, dim_ar = dim_ar,
+  rho_within = rho_within, rho_ar = rho_ar, rho_z = rho_z,
+  x_structure = x_structure,
   r_m = r_m, r_i = r_i, ebic_gamma = ebic_gamma,
   glmnet_nlambda = glmnet_nlambda,
   glmnet_lambda_min_ratio = glmnet_lambda_min_ratio,
