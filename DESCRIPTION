@@ -17,10 +17,8 @@ LazyData: true
 RoxygenNote: 7.3.3
 Imports:
     MASS,
-    conquer,
     mgcv,
     ordinal,
-    qgam,
     graphics,
     susieR,
     survival,

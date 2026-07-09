@@ -13,9 +13,9 @@
 #' @param X An n by p numeric matrix of predictors.
 #' @param y Response vector, or a \code{survival::Surv} object for Cox PH.
 #' @param Z An n by q matrix or vector of covariates. If NULL, only an intercept is used.
-#' @param family A GLM or mgcv family object (e.g., \code{binomial(link="logit")}),
-#'   the string \code{"negbin"} for \code{mgcv::nb()}, or the string
-#'   \code{"qgam"} for quantile-GAM IRLS, \code{"zip"} for
+#' @param family A GLM or mgcv family object (e.g., \code{binomial(link="logit")}
+#'   or \code{mgcv::nb(theta = NULL)}), the string \code{"negbin"} for
+#'   \code{mgcv::nb(theta = NULL)}, the string \code{"zip"} for
 #'   \code{mgcv::ziP()}, or \code{"clm"} /
 #'   \code{"ocat"} / \code{mgcv::ocat(R = )} for ordered-categorical
 #'   cumulative-link
@@ -44,15 +44,6 @@
 #'   If NULL, defaults to 1.
 #' @param scaled_prior_variance Prior variance for SuSiE single effects. Default 1.
 #' @param weight_cutoff Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.005.
-#' @param theta_init Initial dispersion parameter for negative binomial. Default 10.
-#' @param estimate_theta Logical, whether to estimate theta in negative binomial. Default TRUE.
-#' @param qu Quantile level used when \code{family = "qgam"}. Default 0.5.
-#' @param lsig Reserved for the qgam path and must be NULL. qgam calibrates
-#'   \code{lsig} at every refit; SuSiE then uses \code{exp(lsig)} as a fixed
-#'   residual variance.
-#' @param qgam_control Control list passed to \code{qgam::qgam()}.
-#' @param qgam_argGam Optional \code{argGam} list passed to \code{qgam::qgam()}.
-#' @param qgam_discrete Logical, passed to \code{qgam::qgam(discrete = )}.
 #' @param ridge Diagonal ridge added to the Cox information matrix for positive
 #'   definiteness. Used only in the Cox path. Default 1e-6.
 #' @param zip_theta Optional raw two-parameter \code{theta} vector passed to
@@ -97,7 +88,6 @@
 #' @importFrom susieR susie_ss coef.susie
 #' @importFrom survival coxph Surv
 #' @importFrom CppMatrix matrixMultiply matrixVectorMultiply matrixCor
-#' @importFrom MASS glm.nb negative.binomial
 #' @importFrom mgcv gam bam nb tw betar scat ziP
 #' @importFrom ordinal clm
 #' @importFrom SuSiE4I blockwise_crossprod large_scale
@@ -111,11 +101,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
                        scaled_prior_variance = 1,
                        max.iter = 15, max.eps = 1e-5, min.iter = 4,
                        weight_cutoff = 0.005,
-                       theta_init = 10, estimate_theta = TRUE,
-                       qu = 0.5, lsig = NULL,
-                       qgam_control = list(),
-                       qgam_argGam = NULL,
-                       qgam_discrete = FALSE,
                        susie.iter = 30,
                        ridge = 1e-6,
                        zip_theta = NULL,
@@ -193,8 +178,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
   }
   is_negbin_flag <- !is.null(family_string) &&
     family_string %in% c("negbin", "nb", "negative.binomial")
-  is_qgam_flag <- !is.null(family_string) &&
-    family_string %in% c("qgam", "quantile", "quantile.gam", "quantile_gam")
   is_zip_flag <- (!is.null(family_string) &&
     family_string %in% c("zip", "zero.inflated.poisson",
                          "zero_inflated_poisson", "zero inflated poisson",
@@ -251,11 +234,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
     return(
       Run_GLM(
         X = X, y = y, Z = Z,
-        family = if (isTRUE(estimate_theta)) {
-          mgcv::nb(theta = NULL)
-        } else {
-          mgcv::nb(theta = theta_init)
-        },
+        family = mgcv::nb(theta = NULL),
         L = L,
         max.iter = max.iter,
         min.iter = min.iter,
@@ -325,39 +304,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
     )
   }
 
-  if (is_qgam_flag) {
-    return(
-      Run_QGAM(
-        X = X, y = y, Z = Z,
-        qu = qu,
-        lsig = lsig,
-        qgam_control = qgam_control,
-        qgam_argGam = qgam_argGam,
-        qgam_discrete = qgam_discrete,
-        L = L,
-        max.iter = max.iter,
-        min.iter = min.iter,
-        max.eps = max.eps,
-        susie.iter = susie.iter,
-        verbose = verbose,
-        n_threads = n_threads,
-        coverage = coverage,
-        weight_cutoff = weight_cutoff,
-        scaled_prior_variance = scaled_prior_variance,
-        estimate_residual_variance = FALSE,
-        residual_variance = NULL,
-        residual_variance_lowerbound = residual_variance_lowerbound,
-        residual_variance_upperbound = rv_upper_default,
-        L.init = L.init,
-        init_cor_method = init_cor_method,
-        refit_noncs = refit_noncs,
-        noncs_var = noncs_var,
-        suff_block_size = suff_block_size,
-        ...
-      )
-    )
-  }
-
   if (is_clm_flag || is_ocat_flag) {
     return(
       Run_OCAT(
@@ -387,7 +333,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
   }
 
   if (is.character(family)) {
-    stop("Unsupported family string. Use \"negbin\", \"zip\", \"qgam\", \"clm\", \"ocat\", or a GLM/mgcv family object.")
+    stop("Unsupported family string. Use \"negbin\", \"zip\", \"clm\", \"ocat\", or a GLM/mgcv family object.")
   }
 
   if (is_logit_binomial(family) && identical(logit_method, "pg")) {

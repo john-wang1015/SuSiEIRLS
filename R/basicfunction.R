@@ -371,29 +371,6 @@ fit_init_glm <- function(X, y, Z, selected, family) {
   }
 }
 
-fit_init_nb <- function(X, y, Z, selected, theta_init, estimate_theta) {
-  Data <- make_init_data(y = y, Z = Z, X = X, selected = selected)
-  rhs_n <- ncol(Data) - 1L
-  fml <- if (rhs_n == 0L) y ~ 1 else y ~ .
-
-  if (estimate_theta) {
-    tryCatch(
-      MASS::glm.nb(fml, data = Data, link = "log"),
-      error = function(e) {
-        stats::glm(
-          fml, data = Data,
-          family = MASS::negative.binomial(theta_init, link = "log")
-        )
-      }
-    )
-  } else {
-    stats::glm(
-      fml, data = Data,
-      family = MASS::negative.binomial(theta_init, link = "log")
-    )
-  }
-}
-
 fit_init_cox <- function(X, y, status, Z, selected) {
   surv_y <- survival::Surv(y, status)
   Data <- make_init_data(Z = Z, X = X, selected = selected)
@@ -435,32 +412,6 @@ greedy_glm_warm_start <- function(X, y, Z, family, L.init = 1,
     selected <- c(selected, j)
     available[j] <- FALSE
     fit <- fit_init_glm(X = X, y = y, Z = Z, selected = selected, family = family)
-  }
-
-  fit
-}
-
-greedy_nb_warm_start <- function(X, y, Z, L.init = 1, theta_init, estimate_theta,
-                                 init_cor_method = NULL) {
-  p <- ncol(X)
-  k_init <- init_k_from_L(L.init, p)
-  selected <- integer(0)
-  available <- rep(TRUE, p)
-  fit <- fit_init_nb(
-    X = X, y = y, Z = Z, selected = selected,
-    theta_init = theta_init, estimate_theta = estimate_theta
-  )
-
-  for (step in seq_len(k_init)) {
-    r <- stats::residuals(fit, type = "response")
-    j <- select_by_residual_score(X = X, residual = r, available = available)
-    if (is.na(j)) break
-    selected <- c(selected, j)
-    available[j] <- FALSE
-    fit <- fit_init_nb(
-      X = X, y = y, Z = Z, selected = selected,
-      theta_init = theta_init, estimate_theta = estimate_theta
-    )
   }
 
   fit

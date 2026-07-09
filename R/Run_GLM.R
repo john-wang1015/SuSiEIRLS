@@ -170,29 +170,6 @@
   as.numeric(theta)
 }
 
-.mgcv_family_with_theta <- function(family, theta = NULL) {
-  if (is.null(theta)) return(family)
-  fam_name <- tolower(paste(family$family, collapse = " "))
-  link <- if (!is.null(family$link)) family$link else NULL
-
-  if (grepl("negative binomial", fam_name, fixed = TRUE)) {
-    link_val <- if (is.null(link)) "log" else link
-    return(do.call(mgcv::nb, list(theta = theta, link = link_val)))
-  }
-  if (grepl("tweedie", fam_name, fixed = TRUE)) {
-    link_val <- if (is.null(link)) "log" else link
-    return(do.call(mgcv::tw, list(theta = theta, link = link_val)))
-  }
-  if (grepl("beta", fam_name, fixed = TRUE)) {
-    link_val <- if (is.null(link)) "logit" else link
-    return(do.call(mgcv::betar, list(link = link_val, theta = theta)))
-  }
-  if (grepl("scaled t", fam_name, fixed = TRUE)) {
-    return(mgcv::scat(theta = theta))
-  }
-  family
-}
-
 #' General mgcv IRLS-SuSiE path
 #' @inheritParams SuSiE_IRLS
 #' @param family A GLM or mgcv family object that provides \code{variance()}
@@ -243,7 +220,6 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
   alpha_prev <- alpha * 0
   fitX <- NULL
   XCS <- NULL
-  theta_lock <- NULL
   early_no_cs <- FALSE
 
   for (iter in seq_len(max.iter)) {
@@ -325,10 +301,8 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     pred <- .mgcv_predictor_data(Z, XCS_refit)
     Data <- cbind(response_info$data, pred)
     fit_final <- .mgcv_fit_explicit(
-      response_info$response, colnames(pred), Data,
-      .mgcv_family_with_theta(family, theta_lock)
+      response_info$response, colnames(pred), Data, family
     )
-    if (iter == min.iter) theta_lock <- .mgcv_theta(fit_final)
 
     alpha <- clean_coef(stats::coef(fit_final)[seq_len(ncol(ZI))])
     err <- max(sqrt(mean((beta - beta_prev)^2)),
@@ -336,8 +310,9 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     g[iter] <- err
 
     if (verbose) {
-      theta_msg <- if (is.null(theta_lock)) "" else
-        sprintf(", theta_lock=%s", paste(signif(theta_lock, 4), collapse = ","))
+      theta_now <- .mgcv_theta(fit_final)
+      theta_msg <- if (is.null(theta_now)) "" else
+        sprintf(", theta=%s", paste(signif(theta_now, 4), collapse = ","))
       cat(sprintf("Iteration %d: err = %.3e, n_eff = %.1f%s\n",
                   iter, err, work$n_eff, theta_msg))
     }
@@ -353,8 +328,7 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     pred <- .mgcv_predictor_data(Z, XCS)
     Data <- cbind(response_info$data, pred)
     fit_final <- .mgcv_fit_explicit(
-      response_info$response, colnames(pred), Data,
-      .mgcv_family_with_theta(family, theta_lock)
+      response_info$response, colnames(pred), Data, family
     )
   }
 
