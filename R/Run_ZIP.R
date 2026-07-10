@@ -47,11 +47,6 @@
   b
 }
 
-.zip_family_with_theta <- function(family, theta = NULL) {
-  if (is.null(theta)) return(family)
-  mgcv::ziP(theta = theta, b = .zip_family_b(family))
-}
-
 .zip_extract_working <- function(fit, weight_cutoff = 0.005,
                                  zip_info = c("expected", "observed")) {
   zip_info <- match.arg(zip_info)
@@ -110,6 +105,7 @@
 #' @export
 Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
                     family = mgcv::ziP(),
+                    mgcv_model = NULL,
                     zip_info = c("expected", "observed"),
                     L, max.iter, min.iter, max.eps, susie.iter,
                     verbose = TRUE, n_threads = 1, coverage = 0.9,
@@ -144,7 +140,8 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
 
   fit_final <- .mgcv_greedy_warm_start(
     X = X, response_info = response_info, Z = Z, family = family,
-    L.init = L.init, init_cor_method = init_cor_method
+    L.init = L.init, init_cor_method = init_cor_method,
+    mgcv_model = mgcv_model
   )
 
   alpha <- clean_coef(stats::coef(fit_final)[seq_len(ncol(ZI))])
@@ -154,7 +151,6 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
   alpha_prev <- alpha * 0
   fitX <- NULL
   XCS <- NULL
-  theta_lock <- NULL
   early_no_cs <- FALSE
   work <- NULL
 
@@ -240,9 +236,8 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     Data <- cbind(response_info$data, pred)
     fit_final <- .mgcv_fit_explicit(
       response_info$response, colnames(pred), Data,
-      .zip_family_with_theta(family, theta_lock)
+      family, mgcv_model = mgcv_model
     )
-    if (iter == min.iter) theta_lock <- .zip_theta(fit_final, transformed = FALSE)
 
     alpha <- clean_coef(stats::coef(fit_final)[seq_len(ncol(ZI))])
     err <- max(sqrt(mean((beta - beta_prev)^2)),
@@ -250,11 +245,9 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     g[iter] <- err
 
     if (verbose) {
-      theta_msg <- if (is.null(theta_lock)) "" else
-        sprintf(", theta_lock=%s", paste(signif(theta_lock, 4), collapse = ","))
       cat(sprintf(
-        "Iteration %d: err = %.3e, n_eff = %.1f, med_w = %.3g%s\n",
-        iter, err, work$n_eff, work$med_weight, theta_msg
+        "Iteration %d: err = %.3e, n_eff = %.1f, med_w = %.3g\n",
+        iter, err, work$n_eff, work$med_weight
       ))
     }
 
@@ -270,7 +263,7 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     Data <- cbind(response_info$data, pred)
     fit_final <- .mgcv_fit_explicit(
       response_info$response, colnames(pred), Data,
-      .zip_family_with_theta(family, theta_lock)
+      family, mgcv_model = mgcv_model
     )
   }
 

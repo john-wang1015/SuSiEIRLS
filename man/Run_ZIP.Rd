@@ -10,6 +10,7 @@ Run_ZIP(
   Z = NULL,
   weight_cutoff = 0.005,
   family = mgcv::ziP(),
+  mgcv_model = NULL,
   zip_info = c("expected", "observed"),
   L,
   max.iter,
@@ -42,6 +43,10 @@ Run_ZIP(
 \item{weight_cutoff}{Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.005.}
 
 \item{family}{A \code{mgcv::ziP()} family object.}
+
+\item{mgcv_model}{Either \code{NULL}, \code{"gam"}, or \code{"bam"} for
+ordinary GLM and ZIP refits. \code{NULL} uses \code{gam} when
+\code{n < 50000} and \code{bam} otherwise.}
 
 \item{zip_info}{Curvature used for the local quadratic. \code{"expected"}
 uses the Fisher information returned by \code{mgcv::ziP()}; \code{"observed"}

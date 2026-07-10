@@ -26,18 +26,33 @@
   invisible(TRUE)
 }
 
-.mgcv_fit_engine <- function(n) {
-  if (n < 30000L) mgcv::gam else mgcv::bam
+.mgcv_fit_engine <- function(n, mgcv_model = NULL) {
+  if (is.null(mgcv_model)) {
+    mgcv_model <- if (n < 50000L) "gam" else "bam"
+  } else {
+    if (!is.character(mgcv_model) || length(mgcv_model) != 1L ||
+        is.na(mgcv_model)) {
+      stop("mgcv_model must be NULL, 'gam', or 'bam'.")
+    }
+    mgcv_model <- tolower(mgcv_model)
+    if (!mgcv_model %in% c("gam", "bam")) {
+      stop("mgcv_model must be NULL, 'gam', or 'bam'.")
+    }
+  }
+  list(
+    fit = if (identical(mgcv_model, "gam")) mgcv::gam else mgcv::bam,
+    method = if (identical(mgcv_model, "gam")) "REML" else "fREML",
+    model = mgcv_model
+  )
 }
 
-.mgcv_fit_explicit <- function(response, rhs, data, family) {
-  if (nrow(data) < 30000L) {
-    mgcv::gam(.mgcv_explicit_formula(response, rhs), data = data,
-              family = family, method = "REML")
-  } else {
-    mgcv::bam(.mgcv_explicit_formula(response, rhs), data = data,
-              family = family, method = "fREML")
-  }
+.mgcv_fit_explicit <- function(response, rhs, data, family,
+                               mgcv_model = NULL) {
+  engine <- .mgcv_fit_engine(nrow(data), mgcv_model)
+  engine$fit(
+    .mgcv_explicit_formula(response, rhs), data = data,
+    family = family, method = engine$method
+  )
 }
 
 .mgcv_prepare_response <- function(y, family) {
@@ -90,7 +105,8 @@
   out
 }
 
-.mgcv_fit_init <- function(X, response_info, Z, selected, family) {
+.mgcv_fit_init <- function(X, response_info, Z, selected, family,
+                           mgcv_model = NULL) {
   Xinit <- NULL
   if (length(selected) > 0L) {
     Xinit <- X[, selected, drop = FALSE]
@@ -99,18 +115,22 @@
   pred <- .mgcv_predictor_data(Z, Xinit, n = response_info$n)
   dat <- cbind(response_info$data, pred)
   rhs <- colnames(pred)
-  .mgcv_fit_explicit(response_info$response, rhs, dat, family)
+  .mgcv_fit_explicit(
+    response_info$response, rhs, dat, family,
+    mgcv_model = mgcv_model
+  )
 }
 
 .mgcv_greedy_warm_start <- function(X, response_info, Z, family, L.init = 1,
-                                    init_cor_method = NULL) {
+                                    init_cor_method = NULL,
+                                    mgcv_model = NULL) {
   p <- ncol(X)
   k_init <- init_k_from_L(L.init, p)
   selected <- integer(0)
   available <- rep(TRUE, p)
   fit <- .mgcv_fit_init(
     X = X, response_info = response_info, Z = Z,
-    selected = selected, family = family
+    selected = selected, family = family, mgcv_model = mgcv_model
   )
 
   for (step in seq_len(k_init)) {
@@ -121,7 +141,7 @@
     available[j] <- FALSE
     fit <- .mgcv_fit_init(
       X = X, response_info = response_info, Z = Z,
-      selected = selected, family = family
+      selected = selected, family = family, mgcv_model = mgcv_model
     )
   }
 
@@ -174,10 +194,13 @@
 #' @inheritParams SuSiE_IRLS
 #' @param family A GLM or mgcv family object that provides \code{variance()}
 #'   and \code{mu.eta()} for working IRLS.
+#' @param mgcv_model Either \code{NULL}, \code{"gam"}, or \code{"bam"}.
+#'   \code{NULL} uses \code{gam} when \code{n < 50000} and \code{bam} otherwise.
 #' @importFrom mgcv gam bam nb tw betar scat
 #' @export
 Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
                     family = binomial(link = "logit"),
+                    mgcv_model = NULL,
                     L, max.iter, min.iter, max.eps, susie.iter,
                     verbose = TRUE, n_threads = 1, coverage = 0.9,
                     estimate_residual_variance = TRUE,
@@ -210,7 +233,8 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
 
   fit_final <- .mgcv_greedy_warm_start(
     X = X, response_info = response_info, Z = Z, family = family,
-    L.init = L.init, init_cor_method = init_cor_method
+    L.init = L.init, init_cor_method = init_cor_method,
+    mgcv_model = mgcv_model
   )
 
   alpha <- clean_coef(stats::coef(fit_final)[seq_len(ncol(ZI))])
@@ -301,7 +325,8 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     pred <- .mgcv_predictor_data(Z, XCS_refit)
     Data <- cbind(response_info$data, pred)
     fit_final <- .mgcv_fit_explicit(
-      response_info$response, colnames(pred), Data, family
+      response_info$response, colnames(pred), Data, family,
+      mgcv_model = mgcv_model
     )
 
     alpha <- clean_coef(stats::coef(fit_final)[seq_len(ncol(ZI))])
@@ -328,7 +353,8 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     pred <- .mgcv_predictor_data(Z, XCS)
     Data <- cbind(response_info$data, pred)
     fit_final <- .mgcv_fit_explicit(
-      response_info$response, colnames(pred), Data, family
+      response_info$response, colnames(pred), Data, family,
+      mgcv_model = mgcv_model
     )
   }
 

@@ -21,6 +21,9 @@
 #'   cumulative-link
 #'   outcomes. Ignored when \code{y} is a
 #'   \code{Surv} object (Cox PH is used).
+#' @param mgcv_model Either \code{NULL}, \code{"gam"}, or \code{"bam"} for
+#'   ordinary GLM and ZIP refits. \code{NULL} uses \code{gam} when
+#'   \code{n < 50000} and \code{bam} otherwise.
 #' @param logit_method Method for binomial-logit outcomes. \code{"pg"} uses
 #'   \code{Run_Binary}; \code{"glm"} uses the general GLM IRLS path.
 #' @param clm_link Link for ordered-categorical \code{family = "clm"}
@@ -92,8 +95,9 @@
 #' @importFrom ordinal clm
 #' @importFrom SuSiE4I blockwise_crossprod large_scale
 #' @export
-SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
+SuSiE_IRLS <- function(X, Z = NULL, y,
                        family = binomial(link = "logit"),
+                       mgcv_model = NULL,
                        n_threads = 4, L = 10, coverage = 0.9,
                        estimate_residual_variance = TRUE, residual_variance = 0.5,
                        residual_variance_lowerbound = 0.1,
@@ -235,6 +239,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
       Run_GLM(
         X = X, y = y, Z = Z,
         family = mgcv::nb(theta = NULL),
+        mgcv_model = mgcv_model,
         L = L,
         max.iter = max.iter,
         min.iter = min.iter,
@@ -279,6 +284,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
       Run_ZIP(
         X = X, y = y, Z = Z,
         family = zip_family,
+        mgcv_model = mgcv_model,
         zip_info = zip_info,
         L = L,
         max.iter = max.iter,
@@ -364,6 +370,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y = NULL,
   return(
     Run_GLM(
       X = X, y = y, Z = Z, family = family,
+      mgcv_model = mgcv_model,
       L = L, max.iter = max.iter, min.iter = min.iter, max.eps = max.eps,
       susie.iter = susie.iter, verbose = verbose, n_threads = n_threads,
       coverage = coverage, weight_cutoff = weight_cutoff,

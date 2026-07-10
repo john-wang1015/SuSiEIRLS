@@ -10,6 +10,7 @@ Run_GLM(
   Z = NULL,
   weight_cutoff = 0.005,
   family = binomial(link = "logit"),
+  mgcv_model = NULL,
   L,
   max.iter,
   min.iter,
@@ -42,6 +43,9 @@ Run_GLM(
 
 \item{family}{A GLM or mgcv family object that provides \code{variance()}
 and \code{mu.eta()} for working IRLS.}
+
+\item{mgcv_model}{Either \code{NULL}, \code{"gam"}, or \code{"bam"}.
+\code{NULL} uses \code{gam} when \code{n < 50000} and \code{bam} otherwise.}
 
 \item{L}{Number of single effects in SuSiE. Default 10.}
 

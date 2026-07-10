@@ -7,8 +7,9 @@
 SuSiE_IRLS(
   X,
   Z = NULL,
-  y = NULL,
+  y,
   family = binomial(link = "logit"),
+  mgcv_model = NULL,
   n_threads = 4,
   L = 10,
   coverage = 0.9,
@@ -53,6 +54,10 @@ or \code{mgcv::nb(theta = NULL)}), the string \code{"negbin"} for
 cumulative-link
 outcomes. Ignored when \code{y} is a
 \code{Surv} object (Cox PH is used).}
+
+\item{mgcv_model}{Either \code{NULL}, \code{"gam"}, or \code{"bam"} for
+ordinary GLM and ZIP refits. \code{NULL} uses \code{gam} when
+\code{n < 50000} and \code{bam} otherwise.}
 
 \item{n_threads}{Integer number of threads for internal parallel blocks. Default 4.}
 
