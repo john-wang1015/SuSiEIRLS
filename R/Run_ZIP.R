@@ -179,7 +179,7 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
       residual_variance_lowerbound = residual_variance_lowerbound,
       residual_variance_upperbound = residual_variance_upperbound,
       max_iter = susie.iter,
-      estimate_prior_method = "EM",
+      estimate_prior_method = "optim",
       coverage = coverage, ...
     )
     rm(suff)

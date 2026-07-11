@@ -135,7 +135,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
       residual_variance_lowerbound = residual_variance_lowerbound,
       residual_variance_upperbound = residual_variance_upperbound,
       max_iter = susie.iter,
-      estimate_prior_method = "EM",
+      estimate_prior_method = "optim",
       coverage = coverage, ...
     )
 

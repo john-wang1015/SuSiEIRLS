@@ -66,7 +66,7 @@ for (r in seq_len(nsim)) {
     scaled_prior_variance = 1,
     max_iter = 100L,
     coverage = 0.9,
-    estimate_prior_method = "EM"
+    estimate_prior_method = "optim"
   )
 
   zz <- stat$Xty^2 / diag(stat$XtX)

@@ -102,7 +102,7 @@ scaled_prior_variance = scaled_prior_variance,
 estimate_residual_variance = FALSE,
 residual_variance = 1,
 max_iter = susie.iter,
-estimate_prior_method = "EM",
+estimate_prior_method = "optim",
 coverage = coverage,...
 )
 
@@ -252,7 +252,7 @@ residual_variance = residual_variance,
 residual_variance_lowerbound = residual_variance_lowerbound,
 residual_variance_upperbound = residual_variance_upperbound,
 max_iter = susie.iter,
-estimate_prior_method = "EM",
+estimate_prior_method = "optim",
 coverage = coverage,...
 )
 rm(suff)

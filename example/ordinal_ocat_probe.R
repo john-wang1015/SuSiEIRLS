@@ -187,7 +187,7 @@ fit_ocat_score <- function(X, y, Z, L = 5L, max.iter = 5L,
       estimate_residual_variance = FALSE,
       scaled_prior_variance = 1,
       max_iter = susie.iter, coverage = coverage,
-      estimate_prior_method = "EM"
+      estimate_prior_method = "optim"
     )
     beta <- clean_coef(stats::coef(fitX)[-1L])
     CSdt <- summary(fitX)$vars
