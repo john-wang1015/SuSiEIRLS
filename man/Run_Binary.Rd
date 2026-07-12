@@ -20,6 +20,7 @@ Run_Binary(
   coverage = 0.9,
   estimate_residual_variance = TRUE,
   scaled_prior_variance = 1,
+  estimate_prior_variance = TRUE,
   residual_variance = 0.5,
   residual_variance_lowerbound = 0.5,
   residual_variance_upperbound = 1,
@@ -61,6 +62,12 @@ Run_Binary(
 \item{estimate_residual_variance}{Logical for SuSiE residual variance estimation. Default TRUE.}
 
 \item{scaled_prior_variance}{Prior variance for SuSiE single effects. Default 1.}
+
+\item{estimate_prior_variance}{Logical. For Bernoulli logit or probit
+outcomes, TRUE estimates one shared prior variance from the original
+binary likelihood using the fourth-order Laplace correction; FALSE uses
+\code{scaled_prior_variance}. Other binomial links always use the fixed
+value. Non-binomial paths retain their existing SuSiE optimization.}
 
 \item{residual_variance}{Initial or fixed residual variance. Default 0.5.}
 

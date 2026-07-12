@@ -18,6 +18,7 @@ SuSiE_IRLS(
   residual_variance_lowerbound = 0.1,
   residual_variance_upperbound = NULL,
   scaled_prior_variance = 1,
+  estimate_prior_variance = TRUE,
   max.iter = 15,
   max.eps = 1e-05,
   min.iter = 4,
@@ -27,7 +28,7 @@ SuSiE_IRLS(
   zip_theta = NULL,
   zip_b = 0,
   zip_info = c("expected", "observed"),
-  logit_method = c("pg", "glm"),
+  logit_method = c("glm", "pg"),
   clm_link = c("logit", "probit", "cauchit", "cloglog", "loglog"),
   L.init = 1,
   init_cor_method = NULL,
@@ -77,6 +78,12 @@ If NULL, defaults to 1.}
 
 \item{scaled_prior_variance}{Prior variance for SuSiE single effects. Default 1.}
 
+\item{estimate_prior_variance}{Logical. For Bernoulli logit or probit
+outcomes, TRUE estimates one shared prior variance from the original
+binary likelihood using the fourth-order Laplace correction; FALSE uses
+\code{scaled_prior_variance}. Other binomial links always use the fixed
+value. Non-binomial paths retain their existing SuSiE optimization.}
+
 \item{max.iter}{Maximum outer iterations. Default 15.}
 
 \item{max.eps}{Convergence threshold on max parameter change. Default 1e-5.}
@@ -101,8 +108,8 @@ estimated by \code{mgcv}.}
 \code{"expected"} uses Fisher information; \code{"observed"} uses the
 observed Hessian.}
 
-\item{logit_method}{Method for binomial-logit outcomes. \code{"pg"} uses
-\code{Run_Binary}; \code{"glm"} uses the general GLM IRLS path.}
+\item{logit_method}{Method for binomial-logit outcomes. \code{"glm"} uses
+the general GLM IRLS path; \code{"pg"} uses \code{Run_Binary}.}
 
 \item{clm_link}{Link for ordered-categorical \code{family = "clm"}
 outcomes. Default \code{"logit"}. Other supported values are
@@ -148,6 +155,8 @@ A list with elements:
   \item{fitJoint}{Final model fit}
   \item{main_index}{Summary table of identified effects with PIPs and p-values}
   \item{JointCoef}{Coefficient table from the final joint model}
+  \item{binary_prior_variance}{For GLM and Binary paths, the scaled prior
+    variance passed to each binomial SuSiE fit}
 }
 \description{
 Iterates between IRLS-based pseudo-response construction and SuSiE fine-mapping

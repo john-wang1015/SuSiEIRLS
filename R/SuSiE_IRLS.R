@@ -24,8 +24,8 @@
 #' @param mgcv_model Either \code{NULL}, \code{"gam"}, or \code{"bam"} for
 #'   ordinary GLM and ZIP refits. \code{NULL} uses \code{gam} when
 #'   \code{n < 50000} and \code{bam} otherwise.
-#' @param logit_method Method for binomial-logit outcomes. \code{"pg"} uses
-#'   \code{Run_Binary}; \code{"glm"} uses the general GLM IRLS path.
+#' @param logit_method Method for binomial-logit outcomes. \code{"glm"} uses
+#'   the general GLM IRLS path; \code{"pg"} uses \code{Run_Binary}.
 #' @param clm_link Link for ordered-categorical \code{family = "clm"}
 #'   outcomes. Default \code{"logit"}. Other supported values are
 #'   \code{"probit"}, \code{"cauchit"}, \code{"cloglog"}, and \code{"loglog"}.
@@ -46,6 +46,11 @@
 #' @param residual_variance_upperbound Upper bound when estimating residual variance.
 #'   If NULL, defaults to 1.
 #' @param scaled_prior_variance Prior variance for SuSiE single effects. Default 1.
+#' @param estimate_prior_variance Logical. For Bernoulli logit or probit
+#'   outcomes, TRUE estimates one shared prior variance from the original
+#'   binary likelihood using the fourth-order Laplace correction; FALSE uses
+#'   \code{scaled_prior_variance}. Other binomial links always use the fixed
+#'   value. Non-binomial paths retain their existing SuSiE optimization.
 #' @param weight_cutoff Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.005.
 #' @param ridge Diagonal ridge added to the Cox information matrix for positive
 #'   definiteness. Used only in the Cox path. Default 1e-6.
@@ -86,6 +91,8 @@
 #'   \item{fitJoint}{Final model fit}
 #'   \item{main_index}{Summary table of identified effects with PIPs and p-values}
 #'   \item{JointCoef}{Coefficient table from the final joint model}
+#'   \item{binary_prior_variance}{For GLM and Binary paths, the scaled prior
+#'     variance passed to each binomial SuSiE fit}
 #'
 #' @importFrom stats var lm coef glm
 #' @importFrom susieR susie_ss coef.susie
@@ -103,6 +110,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
                        residual_variance_lowerbound = 0.1,
                        residual_variance_upperbound = NULL,
                        scaled_prior_variance = 1,
+                       estimate_prior_variance = TRUE,
                        max.iter = 15, max.eps = 1e-5, min.iter = 4,
                        weight_cutoff = 0.005,
                        susie.iter = 30,
@@ -110,7 +118,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
                        zip_theta = NULL,
                        zip_b = 0,
                        zip_info = c("expected", "observed"),
-                       logit_method = c("pg", "glm"),
+                       logit_method = c("glm", "pg"),
                        clm_link = c("logit", "probit", "cauchit",
                                     "cloglog", "loglog"),
                        L.init = 1,
@@ -197,6 +205,9 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
   # Cox is identified by a Surv-typed response; family is then ignored.
   is_cox_flag <- inherits(y, "Surv")
   logit_method <- match.arg(logit_method)
+  estimate_prior_variance <- .validate_estimate_prior_variance(
+    estimate_prior_variance
+  )
   clm_link <- match.arg(clm_link)
   zip_info <- match.arg(zip_info)
   rv_upper_default <- if (is.null(residual_variance_upperbound)) 1 else residual_variance_upperbound
@@ -352,6 +363,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         susie.iter = susie.iter, verbose = verbose, n_threads = n_threads,
         coverage = coverage, weight_cutoff = weight_cutoff,
         scaled_prior_variance = scaled_prior_variance,
+        estimate_prior_variance = estimate_prior_variance,
         estimate_residual_variance = estimate_residual_variance,
         residual_variance = residual_variance,
         residual_variance_lowerbound = pg_logit_rv_lower,
@@ -375,6 +387,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
       susie.iter = susie.iter, verbose = verbose, n_threads = n_threads,
       coverage = coverage, weight_cutoff = weight_cutoff,
       scaled_prior_variance = scaled_prior_variance,
+      estimate_prior_variance = estimate_prior_variance,
       estimate_residual_variance = estimate_residual_variance,
       residual_variance = residual_variance,
       residual_variance_lowerbound = residual_variance_lowerbound,

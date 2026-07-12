@@ -205,6 +205,7 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
                     verbose = TRUE, n_threads = 1, coverage = 0.9,
                     estimate_residual_variance = TRUE,
                     residual_variance = 0.5, scaled_prior_variance = 1,
+                    estimate_prior_variance = TRUE,
                     residual_variance_lowerbound = 0.1,
                     residual_variance_upperbound = 1,
                     L.init = 1,
@@ -216,6 +217,9 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
   n <- NROW(y)
   p <- ncol(X)
   suff_block_size <- validate_suff_block_size(suff_block_size)
+  estimate_prior_variance <- .validate_estimate_prior_variance(
+    estimate_prior_variance
+  )
   .mgcv_validate_family(family)
   response_info <- .mgcv_prepare_response(y, family)
   if (response_info$n != nrow(X)) stop("Length(y) must equal nrow(X).")
@@ -245,6 +249,10 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
   fitX <- NULL
   XCS <- NULL
   early_no_cs <- FALSE
+  is_binomial <- inherits(family, "family") &&
+    identical(family$family, "binomial")
+  binary_prior_variance <- numeric(0)
+  prior_weights <- list(...)$prior_weights
 
   for (iter in seq_len(max.iter)) {
     beta_prev <- beta
@@ -260,10 +268,19 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
       block_size = suff_block_size
     )
 
+    updateV <- .binary_prior_for_fit(
+      X = X, y = y, eta = fit_final$linear.predictors, family = family,
+      estimate_prior_variance = estimate_prior_variance,
+      scaled_prior_variance = scaled_prior_variance,
+      prior_weights = prior_weights
+    )
+    if (is_binomial) binary_prior_variance[iter] <- updateV
+
     fitX <- susieR::susie_ss(
       XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
       n = max(n / 2, work$n_eff), L = L,
-      scaled_prior_variance = scaled_prior_variance,
+      scaled_prior_variance = updateV,
+      estimate_prior_variance = !is_binomial,
       estimate_residual_variance = estimate_residual_variance,
       residual_variance = residual_variance,
       residual_variance_lowerbound = residual_variance_lowerbound,
@@ -384,6 +401,7 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     main_index = MainIndex,
     JointCoef = G,
     n_eff = if (exists("work")) work$n_eff else NA_real_,
-    theta = .mgcv_theta(fit_final)
+    theta = .mgcv_theta(fit_final),
+    binary_prior_variance = binary_prior_variance
   )
 }

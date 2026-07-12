@@ -7,6 +7,7 @@ Run_Binary <- function(X, y, Z = NULL,
                     L, max.iter, min.iter, max.eps, susie.iter,
                     verbose = TRUE, n_threads = 1, coverage = 0.9,
                     estimate_residual_variance = TRUE,scaled_prior_variance=1,
+                    estimate_prior_variance = TRUE,
                     residual_variance = 0.5,
                     residual_variance_lowerbound = 0.5,
                     residual_variance_upperbound = 1,
@@ -19,6 +20,11 @@ Run_Binary <- function(X, y, Z = NULL,
 n = n_eff= length(y)
 p = ncol(X)
 suff_block_size <- validate_suff_block_size(suff_block_size)
+estimate_prior_variance <- .validate_estimate_prior_variance(
+estimate_prior_variance
+)
+binary_prior_variance <- numeric(0)
+prior_weights <- list(...)$prior_weights
 
 # ============================================
 # Handle Z edge cases
@@ -96,9 +102,17 @@ yty = suff$yty
 rm(suff)
 
 # Run SuSiE on projected data
+updateV <- .binary_prior_for_fit(
+X = X, y = y, eta = eta, family = family,
+estimate_prior_variance = estimate_prior_variance,
+scaled_prior_variance = scaled_prior_variance,
+prior_weights = prior_weights
+)
+binary_prior_variance[length(binary_prior_variance) + 1L] <- updateV
 fitX <- susie_ss(
 XtX = XtX, Xty = Xty, yty = yty, n = max(n/2,n_eff), L = L,
-scaled_prior_variance = scaled_prior_variance,
+scaled_prior_variance = updateV,
+estimate_prior_variance = FALSE,
 estimate_residual_variance = FALSE,
 residual_variance = 1,
 max_iter = susie.iter,
@@ -207,7 +221,8 @@ converged = FALSE,
 fitX = fitX,
 fitJoint = fit_final,
 main_index = MainIndex,
-JointCoef = G
+JointCoef = G,
+binary_prior_variance = binary_prior_variance
 ))
 }
 
@@ -243,10 +258,18 @@ weights = W_diag / phi0,
 n_threads = n_threads,
 block_size = suff_block_size
 )
+updateV <- .binary_prior_for_fit(
+X = X, y = y, eta = eta, family = family,
+estimate_prior_variance = estimate_prior_variance,
+scaled_prior_variance = scaled_prior_variance,
+prior_weights = prior_weights
+)
+binary_prior_variance[length(binary_prior_variance) + 1L] <- updateV
 fitX <- susie_ss(
 XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
 n = max(n/2, n_eff), L = L,
-scaled_prior_variance = scaled_prior_variance,
+scaled_prior_variance = updateV,
+estimate_prior_variance = FALSE,
 estimate_residual_variance = estimate_residual_variance,
 residual_variance = residual_variance,
 residual_variance_lowerbound = residual_variance_lowerbound,
@@ -278,7 +301,8 @@ converged = pg_converged,
 fitX = pg_fitX,
 fitJoint = fit_final,
 main_index = MainIndex,
-JointCoef = G
+JointCoef = G,
+binary_prior_variance = binary_prior_variance
 ))
 }
 Alpha_filtered <- fitX$alpha * 0
@@ -326,7 +350,8 @@ converged = (iter < max.iter && err < max.eps),
 fitX = fitX,
 fitJoint = fit_final,
 main_index = MainIndex,
-JointCoef = G
+JointCoef = G,
+binary_prior_variance = binary_prior_variance
 )
 
 return(AA)

@@ -22,6 +22,7 @@ Run_GLM(
   estimate_residual_variance = TRUE,
   residual_variance = 0.5,
   scaled_prior_variance = 1,
+  estimate_prior_variance = TRUE,
   residual_variance_lowerbound = 0.1,
   residual_variance_upperbound = 1,
   L.init = 1,
@@ -68,6 +69,12 @@ and \code{mu.eta()} for working IRLS.}
 \item{residual_variance}{Initial or fixed residual variance. Default 0.5.}
 
 \item{scaled_prior_variance}{Prior variance for SuSiE single effects. Default 1.}
+
+\item{estimate_prior_variance}{Logical. For Bernoulli logit or probit
+outcomes, TRUE estimates one shared prior variance from the original
+binary likelihood using the fourth-order Laplace correction; FALSE uses
+\code{scaled_prior_variance}. Other binomial links always use the fixed
+value. Non-binomial paths retain their existing SuSiE optimization.}
 
 \item{residual_variance_lowerbound}{Lower bound when estimating residual variance.
 Default 0.1; the PG-logit final correction uses 0.5 when this argument is not supplied.}
