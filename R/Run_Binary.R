@@ -25,6 +25,9 @@ estimate_prior_variance
 )
 binary_prior_variance <- numeric(0)
 prior_weights <- list(...)$prior_weights
+binary_link <- .binary_response_link(y, family)
+use_binary_laplace <- estimate_prior_variance &&
+!is.null(binary_link) && binary_link %in% c("logit", "probit")
 
 # ============================================
 # Handle Z edge cases
@@ -69,6 +72,24 @@ alpha_prev = alpha * 0
 early_no_cs <- FALSE
 XCS <- NULL
 
+# Offset for the binomial prior-variance SER. susieR estimates a single
+# effect's prior variance from a residual that excludes that effect itself
+# (compute_residuals: XtXr - XtX %*% (alpha[l, ] * mu[l, ])). The shared-V
+# 4th-order Laplace objective averages single-variable Bayes factors against a
+# common offset, so that offset must be the X-null model (intercept + Z only).
+# Passing the full linear predictor makes every variable "see itself" and
+# collapses V to 0.
+prior_offset <- NULL
+if (use_binary_laplace) {
+cov_fit <- tryCatch(
+fit_init_glm(X = X, y = y, Z = Z, selected = integer(0), family = family),
+error = function(e) NULL
+)
+if (!is.null(cov_fit)) {
+prior_offset <- as.numeric(cov_fit$linear.predictors)
+}
+}
+
 # ============================================
 # Main iteration loop
 # ============================================
@@ -103,7 +124,8 @@ rm(suff)
 
 # Run SuSiE on projected data
 updateV <- .binary_prior_for_fit(
-X = X, y = y, eta = eta, family = family,
+X = X, y = y,
+eta = if (is.null(prior_offset)) eta else prior_offset, family = family,
 estimate_prior_variance = estimate_prior_variance,
 scaled_prior_variance = scaled_prior_variance,
 prior_weights = prior_weights
@@ -259,7 +281,8 @@ n_threads = n_threads,
 block_size = suff_block_size
 )
 updateV <- .binary_prior_for_fit(
-X = X, y = y, eta = eta, family = family,
+X = X, y = y,
+eta = if (is.null(prior_offset)) eta else prior_offset, family = family,
 estimate_prior_variance = estimate_prior_variance,
 scaled_prior_variance = scaled_prior_variance,
 prior_weights = prior_weights

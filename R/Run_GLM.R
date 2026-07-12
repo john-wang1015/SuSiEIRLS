@@ -251,8 +251,31 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
   early_no_cs <- FALSE
   is_binomial <- inherits(family, "family") &&
     identical(family$family, "binomial")
+  binary_link <- .binary_response_link(y, family)
+  use_binary_laplace <- estimate_prior_variance &&
+    !is.null(binary_link) && binary_link %in% c("logit", "probit")
   binary_prior_variance <- numeric(0)
   prior_weights <- list(...)$prior_weights
+
+  # Offset for the binomial prior-variance SER. susieR estimates a single
+  # effect's prior variance from a residual that excludes that effect itself
+  # (compute_residuals: XtXr - XtX %*% (alpha[l, ] * mu[l, ])). The shared-V
+  # 4th-order Laplace objective averages single-variable Bayes factors against a
+  # common offset, so that offset must be the X-null model (intercept + Z only).
+  # Using fit_final$linear.predictors, which already contains the X main
+  # effects, makes every variable "see itself" and collapses V to 0.
+  prior_offset <- NULL
+  if (use_binary_laplace) {
+    cov_fit <- tryCatch(
+      .mgcv_fit_init(X = X, response_info = response_info, Z = Z,
+                     selected = integer(0), family = family,
+                     mgcv_model = mgcv_model),
+      error = function(e) NULL
+    )
+    if (!is.null(cov_fit)) {
+      prior_offset <- as.numeric(cov_fit$linear.predictors)
+    }
+  }
 
   for (iter in seq_len(max.iter)) {
     beta_prev <- beta
@@ -269,7 +292,9 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     )
 
     updateV <- .binary_prior_for_fit(
-      X = X, y = y, eta = fit_final$linear.predictors, family = family,
+      X = X, y = y,
+      eta = if (is.null(prior_offset)) fit_final$linear.predictors else prior_offset,
+      family = family,
       estimate_prior_variance = estimate_prior_variance,
       scaled_prior_variance = scaled_prior_variance,
       prior_weights = prior_weights

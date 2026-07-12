@@ -80,9 +80,14 @@ If NULL, defaults to 1.}
 
 \item{estimate_prior_variance}{Logical. For Bernoulli logit or probit
 outcomes, TRUE estimates one shared prior variance from the original
-binary likelihood using the fourth-order Laplace correction; FALSE uses
-\code{scaled_prior_variance}. Other binomial links always use the fixed
-value. Non-binomial paths retain their existing SuSiE optimization.}
+binary likelihood using the fourth-order Laplace correction. The single
+effect regression that estimates the variance is evaluated against the
+covariate-only (intercept and \code{Z}) linear predictor, so it excludes
+the \code{X} main effects being fine-mapped; this mirrors how
+\code{susieR} estimates a single effect's prior variance from a residual
+that removes that effect. FALSE uses \code{scaled_prior_variance}. Other
+binomial links always use the fixed value. Non-binomial paths retain their
+existing SuSiE optimization.}
 
 \item{max.iter}{Maximum outer iterations. Default 15.}
 
