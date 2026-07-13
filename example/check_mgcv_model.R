@@ -4,8 +4,8 @@ library(mgcv)
 set.seed(45)
 n <- 160L
 p <- 10L
-X <- SuSiE4I::large_scale(matrix(rnorm(n * p), n, p))
-Z <- SuSiE4I::large_scale(matrix(rnorm(n), n, 1))
+X <- scale(matrix(rnorm(n * p), n, p))
+Z <- scale(matrix(rnorm(n), n, 1))
 colnames(X) <- paste0("X", seq_len(p))
 colnames(Z) <- "Z1"
 eta <- 0.2 + 1.0 * X[, 2] + 0.6 * Z[, 1]

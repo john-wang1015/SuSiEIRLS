@@ -24,8 +24,7 @@ y <- ordered(y, levels = 1:3)
 
 fit <- SuSiEIRLS::SuSiE_IRLS(
   X = X, Z = Z, y = y,
-  family = "clm",
-  clm_link = "probit",
+  family = "clm_probit",
   L = 2L, L.init = 1L,
   max.iter = 3L, min.iter = 1L, max.eps = 1e-3,
   susie.iter = 80L,
@@ -36,6 +35,6 @@ fit <- SuSiEIRLS::SuSiE_IRLS(
 
 pip <- fit$fitX$pip[seq_len(p)]
 if (length(pip) != p || any(!is.finite(pip))) stop("ordinal smoke test failed")
-print(data.frame(family = "ordinal", iter = fit$iter,
+print(data.frame(family = "ordinal", iter = fit$diagnostics$iterations,
                  n_cs = nrow(fit$main_index),
                  top_signal_pip = max(pip[true_idx])))

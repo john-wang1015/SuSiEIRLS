@@ -46,9 +46,27 @@
   )
 }
 
+.mgcv_patch_family_environment <- function(family) {
+  fam_name <- tolower(paste(family$family, collapse = " "))
+  if (grepl("tweedie", fam_name, fixed = TRUE)) {
+    ld <- get("ldTweedie", envir = asNamespace("mgcv"))
+    for (nm in names(family)) {
+      if (is.function(family[[nm]])) {
+        env <- environment(family[[nm]])
+        if (!environmentIsLocked(env) &&
+            !exists("ldTweedie", envir = env, inherits = TRUE)) {
+          assign("ldTweedie", ld, envir = env)
+        }
+      }
+    }
+  }
+  family
+}
+
 .mgcv_fit_explicit <- function(response, rhs, data, family,
                                mgcv_model = NULL) {
   engine <- .mgcv_fit_engine(nrow(data), mgcv_model)
+  family <- .mgcv_patch_family_environment(family)
   engine$fit(
     .mgcv_explicit_formula(response, rhs), data = data,
     family = family, method = engine$method
@@ -192,19 +210,20 @@
 
 #' General mgcv IRLS-SuSiE path
 #' @inheritParams SuSiE_IRLS
-#' @param family A GLM or mgcv family object that provides \code{variance()}
-#'   and \code{mu.eta()} for working IRLS.
-#' @param mgcv_model Either \code{NULL}, \code{"gam"}, or \code{"bam"}.
-#'   \code{NULL} uses \code{gam} when \code{n < 50000} and \code{bam} otherwise.
+#' @param family A GLM or mgcv family object that provides `variance()`
+#'   and `mu.eta()` for working IRLS.
+#' @param mgcv_model Either `NULL`, `"gam"`, or `"bam"`.
+#'   `NULL` uses `gam` when `n < 50000` and `bam` otherwise.
 #' @importFrom mgcv gam bam nb tw betar scat
-#' @export
+#' @keywords internal
+#' @noRd
 Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
                     family = binomial(link = "logit"),
                     mgcv_model = NULL,
                     L, max.iter, min.iter, max.eps, susie.iter,
                     verbose = TRUE, n_threads = 1, coverage = 0.9,
                     estimate_residual_variance = TRUE,
-                    residual_variance = 0.5, scaled_prior_variance = 1,
+                    residual_variance = 0.5, prior_variance = 1,
                     estimate_prior_variance = TRUE,
                     residual_variance_lowerbound = 0.1,
                     residual_variance_upperbound = 1,
@@ -214,12 +233,14 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
                     noncs_var = 0.2,
                     suff_block_size = 10000L, ...) {
 
+  run_start <- proc.time()[["elapsed"]]
   n <- NROW(y)
   p <- ncol(X)
   suff_block_size <- validate_suff_block_size(suff_block_size)
   estimate_prior_variance <- .validate_estimate_prior_variance(
     estimate_prior_variance
   )
+  prior_variance <- .validate_prior_variance(prior_variance)
   .mgcv_validate_family(family)
   response_info <- .mgcv_prepare_response(y, family)
   if (response_info$n != nrow(X)) stop("Length(y) must equal nrow(X).")
@@ -248,34 +269,8 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
   alpha_prev <- alpha * 0
   fitX <- NULL
   XCS <- NULL
+  V_main <- numeric(0)
   early_no_cs <- FALSE
-  is_binomial <- inherits(family, "family") &&
-    identical(family$family, "binomial")
-  binary_link <- .binary_response_link(y, family)
-  use_binary_laplace <- estimate_prior_variance &&
-    !is.null(binary_link) && binary_link %in% c("logit", "probit")
-  binary_prior_variance <- numeric(0)
-  prior_weights <- list(...)$prior_weights
-
-  # Offset for the binomial prior-variance SER. susieR estimates a single
-  # effect's prior variance from a residual that excludes that effect itself
-  # (compute_residuals: XtXr - XtX %*% (alpha[l, ] * mu[l, ])). The shared-V
-  # 4th-order Laplace objective averages single-variable Bayes factors against a
-  # common offset, so that offset must be the X-null model (intercept + Z only).
-  # Using fit_final$linear.predictors, which already contains the X main
-  # effects, makes every variable "see itself" and collapses V to 0.
-  prior_offset <- NULL
-  if (use_binary_laplace) {
-    cov_fit <- tryCatch(
-      .mgcv_fit_init(X = X, response_info = response_info, Z = Z,
-                     selected = integer(0), family = family,
-                     mgcv_model = mgcv_model),
-      error = function(e) NULL
-    )
-    if (!is.null(cov_fit)) {
-      prior_offset <- as.numeric(cov_fit$linear.predictors)
-    }
-  }
 
   for (iter in seq_len(max.iter)) {
     beta_prev <- beta
@@ -291,21 +286,16 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
       block_size = suff_block_size
     )
 
-    updateV <- .binary_prior_for_fit(
-      X = X, y = y,
-      eta = if (is.null(prior_offset)) fit_final$linear.predictors else prior_offset,
-      family = family,
-      estimate_prior_variance = estimate_prior_variance,
-      scaled_prior_variance = scaled_prior_variance,
-      prior_weights = prior_weights
-    )
-    if (is_binomial) binary_prior_variance[iter] <- updateV
+    n_ss <- max(n / 2, work$n_eff)
+    updateV <- if (iter <= min.iter) 2 else prior_variance
+    V_main[iter] <- updateV
 
     fitX <- susieR::susie_ss(
       XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
-      n = max(n / 2, work$n_eff), L = L,
+      n = n_ss, L = L,
       scaled_prior_variance = updateV,
-      estimate_prior_variance = !is_binomial,
+      estimate_prior_variance = iter > min.iter &&
+        isTRUE(estimate_prior_variance),
       estimate_residual_variance = estimate_residual_variance,
       residual_variance = residual_variance,
       residual_variance_lowerbound = residual_variance_lowerbound,
@@ -416,17 +406,16 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     }
   }
 
-  last_err <- if (length(g)) utils::tail(g, 1) else Inf
   list(
-    iter = if (exists("iter")) iter else 0,
-    error = g,
-    converged = early_no_cs || (exists("iter") && iter < max.iter && last_err < max.eps),
+    diagnostics = make_diagnostics(
+      if (exists("iter")) iter else 0L, g, run_start
+    ),
     fitX = fitX,
     fitJoint = fit_final,
     main_index = MainIndex,
     JointCoef = G,
     n_eff = if (exists("work")) work$n_eff else NA_real_,
     theta = .mgcv_theta(fit_final),
-    binary_prior_variance = binary_prior_variance
+    prior_variance_main = V_main
   )
 }

@@ -1,11 +1,13 @@
 #' Cox score IRLS-SuSiE path
 #' @inheritParams SuSiE_IRLS
 #' @param status Event indicator for Cox proportional-hazards outcomes.
-#' @export
+#' @keywords internal
+#' @noRd
 Run_Cox <- function(X, y, status, Z = NULL,
                     L, max.iter, min.iter, max.eps, susie.iter,
                     verbose = TRUE, n_threads = 1, coverage = 0.9,
-                    estimate_residual_variance = TRUE, scaled_prior_variance = 1,
+                    estimate_residual_variance = TRUE, prior_variance = 1,
+                    estimate_prior_variance = TRUE,
                     residual_variance = 0.5,
                     residual_variance_lowerbound = 0.1,
                     residual_variance_upperbound = 1,
@@ -16,8 +18,13 @@ Run_Cox <- function(X, y, status, Z = NULL,
                     noncs_var = 0.2,
                     suff_block_size = 10000L, ...) {
 
+  run_start <- proc.time()[["elapsed"]]
   n = length(y)
   p = ncol(X)
+  estimate_prior_variance <- .validate_estimate_prior_variance(
+    estimate_prior_variance
+  )
+  prior_variance <- .validate_prior_variance(prior_variance)
   suff_block_size <- validate_suff_block_size(suff_block_size)
 
   # ============================================
@@ -64,6 +71,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
   alpha_prev = alpha * 0
   early_no_cs <- FALSE
   XCS <- NULL
+  V_main <- numeric(0)
 
   # ============================================
   # Main iteration loop
@@ -127,10 +135,14 @@ Run_Cox <- function(X, y, status, Z = NULL,
     diag(XtX) = diag(XtX) + ridge
 
     # Run SuSiE-SS on the Cox score sufficient statistics.
+    updateV <- if (iter <= min.iter) 2 else prior_variance
+    V_main[iter] <- updateV
     fitX <- susieR::susie_ss(
       XtX = XtX, Xty = Xty, yty = n - 1, n = n, L = L,
       residual_variance = residual_variance,
-      scaled_prior_variance = scaled_prior_variance,
+      scaled_prior_variance = updateV,
+      estimate_prior_variance = iter > min.iter &&
+        isTRUE(estimate_prior_variance),
       estimate_residual_variance = estimate_residual_variance,
       residual_variance_lowerbound = residual_variance_lowerbound,
       residual_variance_upperbound = residual_variance_upperbound,
@@ -210,6 +222,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
 
     fit_final = survival::coxph(surv_y ~ ., data = Data, ties = "breslow")
 
+
     # Extract covariate coefficients only
     if (ncol(Z) == 0) {
       alpha = numeric(0)
@@ -245,13 +258,12 @@ Run_Cox <- function(X, y, status, Z = NULL,
     MainIndex <- safe_add_p(MainIndex, G)
     fit_final <- clean_model_environment(fit_final)
     return(list(
-      iter = iter,
-      error = g,
-      converged = FALSE,
+      diagnostics = make_diagnostics(iter, g, run_start),
       fitX = fitX,
       fitJoint = fit_final,
       main_index = MainIndex,
-      JointCoef = G
+      JointCoef = G,
+      prior_variance_main = V_main
     ))
   }
 
@@ -280,13 +292,12 @@ Run_Cox <- function(X, y, status, Z = NULL,
   }
 
   AA = list(
-    iter = iter,
-    error = g,
-    converged = (iter < max.iter && err < max.eps),
+    diagnostics = make_diagnostics(iter, g, run_start),
     fitX = fitX,
     fitJoint = fit_final,
     main_index = MainIndex,
-    JointCoef = G
+    JointCoef = G,
+    prior_variance_main = V_main
   )
 
   return(AA)

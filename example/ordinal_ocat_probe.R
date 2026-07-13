@@ -98,8 +98,7 @@ ocat_suffstats <- function(X, y_int, eta, Z, alpha,
   sw <- sqrt(h)
 
   Xh <- X * sw
-  XtX <- SuSiE4I::blockwise_crossprod(Xh, n_threads = n_threads,
-                                      block_size = block_size)
+  XtX <- crossprod(Xh)
   Eh <- matrix(eta * sw, ncol = 1)
   Zh <- Z * sw
   XtE <- CppMatrix::matrixMultiply(Xh, Eh, transA = TRUE)

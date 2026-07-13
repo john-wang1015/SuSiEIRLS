@@ -1,75 +1,3 @@
-get_consecutive <- function(max, number) {
-start <- sample(1:(max - number + 1), 1)
-return(start:(start + number - 1))
-}
-###############################################################################
-demean=function(X){
-Xname=colnames(X)
-p=ncol(X)
-if(is.null(p)){
-X=X-mean(X)
-}else{
-Xmean=colMeans(X)
-X=sweep(X,2,Xmean,"-")
-}
-colnames(X)=Xname
-return(X)
-}
-###############################################################################
-get_pairwise_interactions <- function(W, Z=NULL) {
-n <- nrow(W)
-p <- ncol(W)
-q <- ncol(Z)
-#
-colnames_W <- colnames(W)
-colnames_Z <- colnames(Z)
-# --- W by W interactions ---
-ww_cols <- p * (p + 1) / 2
-WW <- matrix(NA, n, ww_cols)
-colnames_WW <- character(ww_cols)
-#
-col_idx <- 1
-for (i in 1:p) {
-for (j in i:p) {
-WW[, col_idx] <- W[, i] * W[, j]
-colnames_WW[col_idx] <- paste0(colnames_W[i], "*", colnames_W[j])
-col_idx <- col_idx + 1
-}
-}
-# --- Z by W interactions ---
-if(is.null(q)==F){
-zw_cols <- q * p
-ZW <- matrix(NA, n, zw_cols)
-colnames_ZW <- character(zw_cols)
-#
-col_idx <- 1
-for (i in 1:q) {
-for (j in 1:p) {
-ZW[, col_idx] <- Z[, i] * W[, j]
-colnames_ZW[col_idx] <- paste0(colnames_Z[i], "*", colnames_W[j])
-col_idx <- col_idx + 1
-}
-}
-#
-out <- cbind(WW, ZW)
-colnames(out) <- c(colnames_WW, colnames_ZW)
-}else{
-out = WW
-colnames(out)=colnames_WW
-}
-return(out)
-}
-###############################################################################
-get_active_indices <- function(fit) {
-cs = tryCatch(summary(fit), error = function(e) NULL)
-if (!is.null(cs) && length(cs$cs) > 0) {
-active_idx = unique(unlist(cs$cs$cs))
-}else{
-active_idx=NULL
-}
-return(active_idx)
-}
-###############################################################################
 Identifying_MainEffect=function(fit,nam){
 summ=summary(fit)$vars
 g=unique(summ$cs[which(summ$cs>0)])
@@ -86,49 +14,6 @@ S[[i]]=b
 }
 return(do.call(rbind,S))
 }
-###############################################################################
-Identifying_EnvEffect=function(fit,nam){
-  summ=summary(fit)$vars
-  g=unique(summ$cs[which(summ$cs>0)])
-  bb=summary(fit)$cs
-  S=list()
-  for(i in g){
-    indi=which(summ$cs==i)
-    a=summ$variable[indi]
-    b=data.frame(Index=a,Variable=nam[summ$variable[indi]],CS=paste0("Env_CS",i),lbf=bb$cs_log10bf[bb$cs==i]*log(10),PIP=summ$variable_prob[indi])
-    S[[i]]=b
-  }
-  return(do.call(rbind,S))
-}
-###############################################################################
-Identifying_IntEffect=function(fitW,namW){
-summ=summary(fitW)$vars
-if(length(which(summ$cs>0))>0){
-bb=summary(fitW)$cs
-g=unique(summ$cs[which(summ$cs>0)])
-S=list()
-for(i in g){
-indi=which(summ$cs==i)
-a=summ$variable[indi]
-b=data.frame(Index=a,Variable=namW[summ$variable[indi]],CS=paste0("Int_CS",i),lbf=bb$cs_log10bf[bb$cs==i]*log(10),PIP=summ$variable_prob[indi])
-S[[i]]=b
-}
-return(do.call(rbind,S))
-}else{
-return(NULL)
-}
-}
-
-ProjectRes=function(A,B,inercept=F,n_threads){
-if(inercept==T){
-B=cbind(1,B)
-}
-BtB = blockwise_crossprod(X=B,n_threads=n_threads)
-BtA = blockwise_crossprod(B,A,n_threads)
-ProjPart = matrixMultiply(B, solve_with_ridge(BtB, BtA))
-return(ProjPart)
-}
-
 solve_with_ridge <- function(A, B = NULL, ridge = 1e-8) {
   A <- as.matrix(A)
   if (nrow(A) != ncol(A)) stop("A must be a square matrix.")
@@ -136,6 +21,15 @@ solve_with_ridge <- function(A, B = NULL, ridge = 1e-8) {
     diag(A) <- diag(A) + ridge
   }
   if (is.null(B)) CppMatrix::matrixInverse(A) else CppMatrix::matrixSolve(A, as.matrix(B))
+}
+
+make_diagnostics <- function(iterations, eps, start_time) {
+  final_eps <- if (length(eps)) as.numeric(utils::tail(eps, 1L)) else NA_real_
+  list(
+    iterations = as.integer(iterations),
+    eps = final_eps,
+    runtime_seconds = unname(proc.time()[["elapsed"]] - start_time)
+  )
 }
 
 weighted_residual_suffstats <- function(X, y, ZI, weights,
@@ -207,11 +101,24 @@ clean_model_environment <- function(fit, env = .GlobalEnv) {
   }
   fit
 }
-
 clean_coef <- function(x) {
   x <- as.numeric(x)
   x[!is.finite(x)] <- 0
   x
+}
+
+.validate_estimate_prior_variance <- function(x) {
+  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+    stop("estimate_prior_variance must be TRUE or FALSE.")
+  }
+  x
+}
+
+.validate_prior_variance <- function(x) {
+  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x < 0) {
+    stop("prior_variance must be a non-negative finite scalar.")
+  }
+  as.numeric(x)
 }
 
 build_noncs_refit_term <- function(X, fitX, CSdt, cs_indices, XCS,
@@ -361,16 +268,6 @@ make_init_data <- function(y = NULL, Z = NULL, X = NULL, selected = integer(0)) 
   Data
 }
 
-fit_init_glm <- function(X, y, Z, selected, family) {
-  Data <- make_init_data(y = y, Z = Z, X = X, selected = selected)
-  rhs_n <- ncol(Data) - 1L
-  if (rhs_n == 0L) {
-    stats::glm(y ~ 1, data = Data, family = family)
-  } else {
-    stats::glm(y ~ ., data = Data, family = family)
-  }
-}
-
 fit_init_cox <- function(X, y, status, Z, selected) {
   surv_y <- survival::Surv(y, status)
   Data <- make_init_data(Z = Z, X = X, selected = selected)
@@ -397,26 +294,6 @@ select_by_residual_score <- function(X, residual, available) {
   which.max(abs(scores))
 }
 
-greedy_glm_warm_start <- function(X, y, Z, family, L.init = 1,
-                                  init_cor_method = NULL) {
-  p <- ncol(X)
-  k_init <- init_k_from_L(L.init, p)
-  selected <- integer(0)
-  available <- rep(TRUE, p)
-  fit <- fit_init_glm(X = X, y = y, Z = Z, selected = selected, family = family)
-
-  for (step in seq_len(k_init)) {
-    r <- stats::residuals(fit, type = "response")
-    j <- select_by_residual_score(X = X, residual = r, available = available)
-    if (is.na(j)) break
-    selected <- c(selected, j)
-    available[j] <- FALSE
-    fit <- fit_init_glm(X = X, y = y, Z = Z, selected = selected, family = family)
-  }
-
-  fit
-}
-
 greedy_cox_warm_start <- function(X, y, status, Z, L.init = 1,
                                   init_cor_method = NULL) {
   p <- ncol(X)
@@ -435,47 +312,4 @@ greedy_cox_warm_start <- function(X, y, status, Z, L.init = 1,
   }
 
   fit
-}
-
-is_logit_binomial <- function(fam) {
-  inherits(fam, "family") &&
-    fam$link == "logit" &&
-    fam$family %in% c("binomial", "quasibinomial")
-}
-
-estimate_sigma2_null <- function(tilde_y, X, W_diag, strata,
-                                 ZI = NULL, m = 200,
-                                 method = c("median","mean")) {
-  method <- match.arg(method)
-  n <- length(tilde_y)
-  p <- ncol(X)
-  Xnull <- X
-  levs <- sort(unique(strata))
-  for (s in levs) {
-    idx <- which(strata == s)
-    Xnull[idx, ] <- Xnull[sample(idx, length(idx), replace = FALSE), , drop = FALSE]
-  }
-  m <- min(m, p)
-  cols <- sample.int(p, m, replace = FALSE)
-  G0 <- Xnull[, cols, drop = FALSE]
-  W_sqrt <- sqrt(W_diag)
-  tilde_G0 <- G0 * W_sqrt
-  if (!is.null(ZI) && ncol(ZI) > 0) {
-    tilde_Z <- ZI * W_sqrt
-    tilde_G0 <- tilde_G0 - ProjectRes(A = tilde_G0, B = tilde_Z, n_threads = 1)
-  }
-  U <- as.numeric(matrixMultiply(tilde_G0, matrix(tilde_y, ncol = 1), transA = TRUE))
-  V <- as.numeric(colSums(tilde_G0^2))
-  good <- is.finite(U) & is.finite(V) & (V > 0)
-
-  Z2 <- (U[good]^2) / V[good]
-  if (!length(Z2)) return(1)
-
-  if (method == "mean") {
-    sigma2_hat <- mean(Z2)
-  } else {
-    sigma2_hat <- median(Z2) / 0.4559364
-  }
-
-  max(1, sigma2_hat)
 }

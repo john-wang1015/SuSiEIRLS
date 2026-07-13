@@ -17,19 +17,17 @@ SuSiE_IRLS(
   residual_variance = 0.5,
   residual_variance_lowerbound = 0.1,
   residual_variance_upperbound = NULL,
-  scaled_prior_variance = 1,
+  prior_variance = 1,
   estimate_prior_variance = TRUE,
   max.iter = 15,
   max.eps = 1e-05,
-  min.iter = 4,
+  min.iter = 3,
   weight_cutoff = 0.005,
   susie.iter = 30,
   ridge = 1e-06,
   zip_theta = NULL,
   zip_b = 0,
   zip_info = c("expected", "observed"),
-  logit_method = c("glm", "pg"),
-  clm_link = c("logit", "probit", "cauchit", "cloglog", "loglog"),
   L.init = 1,
   init_cor_method = NULL,
   refit_noncs = TRUE,
@@ -45,20 +43,18 @@ SuSiE_IRLS(
 
 \item{Z}{An n by q matrix or vector of covariates. If NULL, only an intercept is used.}
 
-\item{y}{Response vector, or a \code{survival::Surv} object for Cox PH.}
+\item{y}{Response vector, or a `survival::Surv` object for Cox PH.}
 
-\item{family}{A GLM or mgcv family object (e.g., \code{binomial(link="logit")}
-or \code{mgcv::nb(theta = NULL)}), the string \code{"negbin"} for
-\code{mgcv::nb(theta = NULL)}, the string \code{"zip"} for
-\code{mgcv::ziP()}, or \code{"clm"} /
-\code{"ocat"} / \code{mgcv::ocat(R = )} for ordered-categorical
-cumulative-link
-outcomes. Ignored when \code{y} is a
-\code{Surv} object (Cox PH is used).}
+\item{family}{A GLM or mgcv family object, such as
+`binomial(link = "logit")` or `mgcv::nb(theta = NULL)`. The strings
+`"negbin"`, `"zip"`, and `"ocat"` select their corresponding paths.
+Cumulative-link models use `"clm_logit"`, `"clm_probit"`,
+`"clm_cloglog"`, `"clm_loglog"`, or `"clm_cauchit"`. An
+`mgcv::ocat(R = )` family object is also accepted. This argument is ignored
+when `y` is a `Surv` object.}
 
-\item{mgcv_model}{Either \code{NULL}, \code{"gam"}, or \code{"bam"} for
-ordinary GLM and ZIP refits. \code{NULL} uses \code{gam} when
-\code{n < 50000} and \code{bam} otherwise.}
+\item{mgcv_model}{Either `NULL`, `"gam"`, or `"bam"` for ordinary GLM and
+ZIP refits. `NULL` uses `gam` when `n < 50000` and `bam` otherwise.}
 
 \item{n_threads}{Integer number of threads for internal parallel blocks. Default 4.}
 
@@ -71,54 +67,41 @@ ordinary GLM and ZIP refits. \code{NULL} uses \code{gam} when
 \item{residual_variance}{Initial or fixed residual variance. Default 0.5.}
 
 \item{residual_variance_lowerbound}{Lower bound when estimating residual variance.
-Default 0.1; the PG-logit final correction uses 0.5 when this argument is not supplied.}
+Default 0.1.}
 
 \item{residual_variance_upperbound}{Upper bound when estimating residual variance.
 If NULL, defaults to 1.}
 
-\item{scaled_prior_variance}{Prior variance for SuSiE single effects. Default 1.}
+\item{prior_variance}{Prior variance supplied to SuSiE after the warm-up
+iterations. The warm-up value is fixed at 2. Default 1.}
 
-\item{estimate_prior_variance}{Logical. For Bernoulli logit or probit
-outcomes, TRUE estimates one shared prior variance from the original
-binary likelihood using the fourth-order Laplace correction. The single
-effect regression that estimates the variance is evaluated against the
-covariate-only (intercept and \code{Z}) linear predictor, so it excludes
-the \code{X} main effects being fine-mapped; this mirrors how
-\code{susieR} estimates a single effect's prior variance from a residual
-that removes that effect. FALSE uses \code{scaled_prior_variance}. Other
-binomial links always use the fixed value. Non-binomial paths retain their
-existing SuSiE optimization.}
+\item{estimate_prior_variance}{Logical. If TRUE, estimate the prior variance
+with SuSiE's `"optim"` method after `min.iter`; otherwise keep
+`prior_variance` fixed after `min.iter`.}
 
 \item{max.iter}{Maximum outer iterations. Default 15.}
 
 \item{max.eps}{Convergence threshold on max parameter change. Default 1e-5.}
 
-\item{min.iter}{Minimum iterations before convergence check. Default 3.}
+\item{min.iter}{Minimum iterations before convergence checks and prior
+variance updates. Default 3.}
 
 \item{weight_cutoff}{Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.005.}
 
-\item{susie.iter}{Maximum iterations for each SuSiE fit. Default 300.}
+\item{susie.iter}{Maximum iterations for each SuSiE fit. Default 30.}
 
 \item{ridge}{Diagonal ridge added to the Cox information matrix for positive
 definiteness. Used only in the Cox path. Default 1e-6.}
 
-\item{zip_theta}{Optional raw two-parameter \code{theta} vector passed to
-\code{mgcv::ziP(theta = )} when \code{family = "zip"}. If NULL, theta is
-estimated by \code{mgcv}.}
+\item{zip_theta}{Optional raw two-parameter `theta` vector passed to
+`mgcv::ziP(theta = )` when `family = "zip"`. If NULL, mgcv estimates it.}
 
-\item{zip_b}{Non-negative \code{b} parameter passed to \code{mgcv::ziP()} when
-\code{family = "zip"}. Default 0.}
+\item{zip_b}{Non-negative `b` parameter passed to `mgcv::ziP()` when
+`family = "zip"`. Default 0.}
 
-\item{zip_info}{Curvature used by the \code{mgcv::ziP()} local quadratic.
-\code{"expected"} uses Fisher information; \code{"observed"} uses the
+\item{zip_info}{Curvature used by the `mgcv::ziP()` local quadratic.
+`"expected"` uses Fisher information; `"observed"` uses the
 observed Hessian.}
-
-\item{logit_method}{Method for binomial-logit outcomes. \code{"glm"} uses
-the general GLM IRLS path; \code{"pg"} uses \code{Run_Binary}.}
-
-\item{clm_link}{Link for ordered-categorical \code{family = "clm"}
-outcomes. Default \code{"logit"}. Other supported values are
-\code{"probit"}, \code{"cauchit"}, \code{"cloglog"}, and \code{"loglog"}.}
 
 \item{L.init}{Number of SNPs used in the initial low-dimensional warm start.
 Default 1.}
@@ -133,14 +116,14 @@ is used only to improve the next linear predictor estimate and is not
 reported as a credible set. Default TRUE.}
 
 \item{noncs_var}{Minimum non-CS variance fraction required to add the
-non-CS residual summary variable. For example, \code{noncs_var = 0.2}
+non-CS residual summary variable. For example, `noncs_var = 0.2`
 adds it when the CS summary explains less than 80% of the posterior mean
 linear predictor variance. Default 0.2.}
 
-\item{scale_data}{Logical. If TRUE, standardize \code{X} with
-\code{SuSiE4I::large_scale()} and center/scale non-binary columns of
-\code{Z}; binary columns of \code{Z} are left on their original scale. If
-FALSE, \code{X} and non-binary columns of \code{Z} are assumed to already
+\item{scale_data}{Logical. If TRUE, standardize `X` with
+`SuSiE4I::large_scale()` and center and scale non-binary columns of `Z`;
+binary columns of `Z` remain on their original scale. If FALSE, `X` and
+non-binary columns of `Z` are assumed to already
 be standardized. Default TRUE.}
 
 \item{suff_block_size}{Row block size for weighted sufficient-statistic
@@ -152,16 +135,10 @@ memory is sufficient. Default 10000.}
 \item{...}{Additional arguments passed to the SuSiE fitting routine.}
 }
 \value{
-A list with elements:
-  \item{iter}{Number of iterations completed}
-  \item{error}{Max parameter change per iteration}
-  \item{converged}{Logical}
-  \item{fitX}{SuSiE results for main effects}
-  \item{fitJoint}{Final model fit}
-  \item{main_index}{Summary table of identified effects with PIPs and p-values}
-  \item{JointCoef}{Coefficient table from the final joint model}
-  \item{binary_prior_variance}{For GLM and Binary paths, the scaled prior
-    variance passed to each binomial SuSiE fit}
+A list containing the main-effect SuSiE fit, final joint model,
+  discovery and coefficient summaries, convergence information, and the
+  prior variance used at each outer iteration. `diagnostics` contains the
+  number of outer iterations, final convergence eps, and runtime in seconds.
 }
 \description{
 Iterates between IRLS-based pseudo-response construction and SuSiE fine-mapping
@@ -170,8 +147,7 @@ on covariate-adjusted data. At each outer iteration the algorithm:
 3) runs SuSiE on X, 4) refits a GLM with selected variables, and checks convergence.
 }
 \details{
-For survival outcomes, pass a \code{survival::Surv} object as \code{y}; the
-algorithm then dispatches to a Cox proportional-hazards fine-mapping routine
-(\code{Run_Cox}) that builds score-based sufficient statistics and runs
-SuSiE-SS. No IRLS weights are used in the Cox path.
+For survival outcomes, pass a `survival::Surv` object as `y`. The Cox path
+builds score-based sufficient statistics and runs SuSiE-SS without IRLS
+weights.
 }

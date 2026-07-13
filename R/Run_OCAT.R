@@ -235,8 +235,8 @@ ocat_suffstats <- function(X, y_int, eta, Z, alpha,
   sw <- sqrt(h)
 
   Xh <- X * sw
-  XtX <- SuSiE4I::blockwise_crossprod(Xh, n_threads = n_threads,
-                                      block_size = block_size)
+  XtX <- SuSiE4I:::blockwise_crossprod(Xh, n_threads = n_threads,
+                                       block_size = block_size)
   Eh <- matrix(eta * sw, ncol = 1)
   XtE <- CppMatrix::matrixMultiply(Xh, Eh, transA = TRUE)
   XtU <- as.numeric(CppMatrix::matrixMultiply(
@@ -259,12 +259,8 @@ ocat_suffstats <- function(X, y_int, eta, Z, alpha,
     ))
   }
 
-  TtT <- matrix(0, K, K)
-  for (i in seq_len(n)) {
-    di <- pp$D[i, ]
-    TtT <- TtT + tcrossprod(di) / pp$pr[i]^2
-    TtT <- TtT - diag(pp$E[i, ] / pp$pr[i], K)
-  }
+  Dp <- pp$D / pp$pr
+  TtT <- crossprod(Dp) - diag(colSums(pp$E / pp$pr), K)
   TtU <- colSums(pp$D / pp$pr)
 
   if (q > 0L) {
@@ -315,15 +311,14 @@ ocat_suffstats <- function(X, y_int, eta, Z, alpha,
 #' @param Z An n by q matrix or vector of covariates. If NULL, only the
 #'   ordered-categorical threshold nuisance parameters are projected out.
 #' @param family An ordered-categorical family object, typically
-#'   \code{mgcv::ocat(R = )}, or the string \code{"clm"} / \code{"ocat"} /
-#'   \code{"ordinal"}.
-#' @param clm_link Link used by \code{ordinal::clm()} and the local
-#'   cumulative-link score statistics. Supported values are \code{"logit"},
-#'   \code{"probit"}, \code{"cauchit"}, \code{"cloglog"}, and
-#'   \code{"loglog"}.
+#'   `mgcv::ocat(R = )`, or the string `"clm"`, `"ocat"`, or `"ordinal"`.
+#' @param clm_link Link used by `ordinal::clm()` and the local cumulative-link
+#'   score statistics. Supported values are `"logit"`, `"probit"`,
+#'   `"cauchit"`, `"cloglog"`, and `"loglog"`.
 #' @param ridge Diagonal ridge added to the nuisance and projected information
 #'   matrices for numerical stability.
-#' @export
+#' @keywords internal
+#' @noRd
 Run_OCAT <- function(X, y, Z = NULL,
                      family = NULL,
                      clm_link = c("logit", "probit", "cauchit",
@@ -331,7 +326,8 @@ Run_OCAT <- function(X, y, Z = NULL,
                      L, max.iter, min.iter, max.eps, susie.iter,
                      verbose = TRUE, n_threads = 1, coverage = 0.9,
                      estimate_residual_variance = TRUE,
-                     residual_variance = 0.5, scaled_prior_variance = 1,
+                     residual_variance = 0.5, prior_variance = 1,
+                     estimate_prior_variance = TRUE,
                      residual_variance_lowerbound = 0.1,
                      residual_variance_upperbound = 1,
                      ridge = 1e-6,
@@ -341,8 +337,13 @@ Run_OCAT <- function(X, y, Z = NULL,
                      noncs_var = 0.2,
                      suff_block_size = 10000L, ...) {
 
+  run_start <- proc.time()[["elapsed"]]
   n <- NROW(y)
   p <- ncol(X)
+  estimate_prior_variance <- .validate_estimate_prior_variance(
+    estimate_prior_variance
+  )
+  prior_variance <- .validate_prior_variance(prior_variance)
   clm_link <- match.arg(clm_link)
   if (is.null(colnames(X))) colnames(X) <- paste0("X", seq_len(p))
   suff_block_size <- validate_suff_block_size(suff_block_size)
@@ -371,6 +372,7 @@ Run_OCAT <- function(X, y, Z = NULL,
   early_no_cs <- FALSE
   fitX <- NULL
   XCS <- NULL
+  V_main <- numeric(0)
   stat <- NULL
 
   for (iter in seq_len(max.iter)) {
@@ -383,10 +385,14 @@ Run_OCAT <- function(X, y, Z = NULL,
       n_threads = n_threads, ridge = ridge, block_size = suff_block_size
     )
 
+    updateV <- if (iter <= min.iter) 2 else prior_variance
+    V_main[iter] <- updateV
     fitX <- susieR::susie_ss(
       XtX = stat$XtX, Xty = stat$Xty, yty = stat$yty,
       n = n, L = L,
-      scaled_prior_variance = scaled_prior_variance,
+      scaled_prior_variance = updateV,
+      estimate_prior_variance = iter > min.iter &&
+        isTRUE(estimate_prior_variance),
       estimate_residual_variance = estimate_residual_variance,
       residual_variance = residual_variance,
       residual_variance_lowerbound = residual_variance_lowerbound,
@@ -450,6 +456,7 @@ Run_OCAT <- function(X, y, Z = NULL,
     )
     eta <- .ocat_linear_predictor(fit_final, pred_refit, n = n)
 
+
     alpha <- .ocat_nuisance_coef(fit_final, q = q)
     err <- max(sqrt(mean((beta - beta_prev)^2)),
                sqrt(mean((alpha - alpha_prev)^2)))
@@ -474,15 +481,13 @@ Run_OCAT <- function(X, y, Z = NULL,
     MainIndex <- safe_add_p(MainIndex, G)
     fit_final <- clean_model_environment(fit_final)
     return(list(
-      iter = iter,
-      error = g,
-      converged = FALSE,
+      diagnostics = make_diagnostics(iter, g, run_start),
       fitX = fitX,
       fitJoint = fit_final,
       main_index = MainIndex,
       JointCoef = G,
-      clm_link = clm_link,
-      n_eff = if (!is.null(stat)) stat$n_eff else NA_real_
+      n_eff = if (!is.null(stat)) stat$n_eff else NA_real_,
+      prior_variance_main = V_main
     ))
   }
 
@@ -509,25 +514,24 @@ Run_OCAT <- function(X, y, Z = NULL,
     }
   }
 
-  last_err <- if (length(g)) utils::tail(g, 1) else Inf
   list(
-    iter = if (exists("iter")) iter else 0,
-    error = g,
-    converged = exists("iter") && iter < max.iter && last_err < max.eps,
+    diagnostics = make_diagnostics(
+      if (exists("iter")) iter else 0L, g, run_start
+    ),
     fitX = fitX,
     fitJoint = fit_final,
     main_index = MainIndex,
     JointCoef = G,
-    clm_link = clm_link,
     n_eff = if (!is.null(stat)) stat$n_eff else NA_real_,
     score_diagnostics = if (!is.null(stat)) {
       stat[c("min_pr", "min_h", "med_h", "max_h")]
     } else {
       NULL
-    }
+    },
+    prior_variance_main = V_main
   )
 }
 
-#' @rdname Run_OCAT
-#' @export
+#' @keywords internal
+#' @noRd
 Run_CLM <- Run_OCAT

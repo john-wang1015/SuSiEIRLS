@@ -2,7 +2,7 @@
 
 SuSiE fine-mapping for non-Gaussian outcomes via IRLS.
 
-The package extends the Sum of Single Effects (SuSiE) framework to generalized linear models (GLMs), binary outcomes with a Pólya-Gamma augmentation path, and Cox proportional-hazards survival outcomes. At each outer iteration the algorithm constructs approximate Gaussian sufficient statistics from the current working model and passes them to `susieR::susie_ss()`.
+The package extends the Sum of Single Effects (SuSiE) framework to generalized linear models (GLMs), ordered outcomes, and Cox proportional-hazards survival outcomes. At each outer iteration the algorithm constructs approximate Gaussian sufficient statistics from the current working model and passes them to `susieR::susie_ss()`.
 
 ## Installation
 
@@ -20,8 +20,7 @@ devtools::install_github("harryyiheyang/SuSiEIRLS")
 | Response | Family / method | Sufficient statistics |
 |---|---|---|
 | Continuous or count | Any `stats` or `mgcv` family object (e.g. `poisson()`, `Gamma()`, `mgcv::tw()`, `mgcv::betar()`, `mgcv::nb()`) | IRLS working response and weights |
-| Binary | `binomial(link = "logit")` with `logit_method = "pg"` (default) | Pólya-Gamma augmented pseudo-response |
-| Binary | `binomial(link = "logit")` with `logit_method = "glm"` | Standard IRLS working response |
+| Binary | `binomial(link = "logit")` | Standard IRLS working response |
 | Ordered categorical | `family = "ocat"` or `mgcv::ocat(R = )` | Cumulative-logit score and observed information |
 | Survival | Pass a `survival::Surv` object as `y` | Cox partial-likelihood score and information |
 
@@ -30,11 +29,8 @@ devtools::install_github("harryyiheyang/SuSiEIRLS")
 ```r
 library(SuSiEIRLS)
 
-## Binary (Pólya-Gamma path, the default)
+## Binary logistic IRLS
 fit <- SuSiE_IRLS(X = X, Z = Z, y = y, L = 10)
-
-## Binary (standard IRLS path)
-fit <- SuSiE_IRLS(X = X, Z = Z, y = y, L = 10, logit_method = "glm")
 
 ## Poisson
 fit <- SuSiE_IRLS(X = X, Z = Z, y = y, family = poisson(), L = 10)
@@ -61,7 +57,8 @@ fit <- SuSiE_IRLS(X = X, Z = Z, y = Surv(time, status), L = 10)
 | `L` | 10 | Number of single effects |
 | `coverage` | 0.9 | Credible-set coverage |
 | `max.iter` | 15 | Maximum outer IRLS iterations |
-| `logit_method` | `"pg"` | `"pg"` for Pólya-Gamma, `"glm"` for standard IRLS (binary only) |
+| `prior_variance` | 1 | Prior variance supplied after the warm-up iterations |
+| `estimate_prior_variance` | `TRUE` | Estimate prior variance with `optim` after `min.iter` |
 
 ### Output
 
@@ -77,8 +74,6 @@ A list containing:
 ## Method overview
 
 **GLM / extended-GLM path.** The algorithm uses IRLS to linearise the GLM likelihood around the current estimate. At each outer iteration it forms a working response $z$ and diagonal weight matrix $W$, projects out covariates $Z$, and constructs weighted sufficient statistics $(X^\top W X,\; X^\top W z,\; z^\top W z)$ for `susie_ss()`. The residual variance is estimated within a bounded interval (default $[0.1, 1]$).
-
-**Binary (Pólya-Gamma) path.** For binary logistic outcomes, the Pólya-Gamma data-augmentation identity represents the logistic likelihood as a conditionally Gaussian problem with augmentation weights $\omega_i = \tanh(\eta_i/2) / (2\eta_i)$. This path improves signal detection when the standard IRLS approximation is weak. The final log Bayes factors are corrected back to the IRLS scale.
 
 **Ordered categorical path.** For ordered categorical outcomes, the package uses the cumulative-logit likelihood with flexible thresholds estimated by `ordinal::clm()`. It builds a local quadratic from the score and observed information for the location parameter, projects out both covariates and threshold nuisance parameters, and passes the resulting sufficient statistics to `susie_ss()`. The default SuSiE residual variance is initialized at 0.5 and estimated within $[0.1, 1]$.
 

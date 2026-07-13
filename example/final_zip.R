@@ -281,7 +281,7 @@ for (n in ns) {
         }
 
         t1 <- proc.time()[["elapsed"]]
-        fit_irls <- SuSiEIRLS::Run_ZIP(
+        fit_irls <- SuSiEIRLS::SuSiE_IRLS(
           X = X, y = y, Z = Z, family = mgcv::ziP(),
           L = L, max.iter = irls_max_iter, min.iter = 2L, max.eps = 1e-4,
           susie.iter = susie_iter, verbose = FALSE, n_threads = irls_threads,

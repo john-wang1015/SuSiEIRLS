@@ -374,8 +374,7 @@ for (cutoff_name in names(cutoff_probs)) {
             t1 <- proc.time()[["elapsed"]]
             fit_irls <- SuSiEIRLS::SuSiE_IRLS(
               X = X, Z = Z, y = y,
-              family = "clm",
-              clm_link = "probit",
+              family = "clm_probit",
               L = L, L.init = 1L,
               max.iter = irls_max_iter, min.iter = 2L, max.eps = fit_tol,
               susie.iter = 300L,
@@ -390,9 +389,10 @@ for (cutoff_name in names(cutoff_probs)) {
             )
             pip <- fit_irls$fitX$pip[seq_len(p)]
             evals <- eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage)
-            evals$iter <- fit_irls$iter
-            evals$converged <- fit_irls$converged
-            evals$hit_maxit <- fit_irls$iter >= irls_max_iter && !isTRUE(fit_irls$converged)
+            evals$iter <- fit_irls$diagnostics$iterations
+            evals$converged <- fit_irls$diagnostics$eps < fit_tol
+            evals$hit_maxit <- fit_irls$diagnostics$iterations >= irls_max_iter &&
+              fit_irls$diagnostics$eps >= fit_tol
             evals$maxit <- irls_max_iter
             evals$tol <- fit_tol
             evals$sigma2 <- fit_irls$fitX$sigma2
@@ -403,8 +403,7 @@ for (cutoff_name in names(cutoff_probs)) {
             t1 <- proc.time()[["elapsed"]]
             fit_irls <- SuSiEIRLS::SuSiE_IRLS(
               X = X, Z = Z, y = y,
-              family = "clm",
-              clm_link = "probit",
+              family = "clm_probit",
               L = L, L.init = 1L,
               max.iter = irls_max_iter, min.iter = 2L, max.eps = fit_tol,
               susie.iter = 300L,
@@ -417,9 +416,10 @@ for (cutoff_name in names(cutoff_probs)) {
             )
             pip <- fit_irls$fitX$pip[seq_len(p)]
             evals <- eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage)
-            evals$iter <- fit_irls$iter
-            evals$converged <- fit_irls$converged
-            evals$hit_maxit <- fit_irls$iter >= irls_max_iter && !isTRUE(fit_irls$converged)
+            evals$iter <- fit_irls$diagnostics$iterations
+            evals$converged <- fit_irls$diagnostics$eps < fit_tol
+            evals$hit_maxit <- fit_irls$diagnostics$iterations >= irls_max_iter &&
+              fit_irls$diagnostics$eps >= fit_tol
             evals$maxit <- irls_max_iter
             evals$tol <- fit_tol
             evals$sigma2 <- fit_irls$fitX$sigma2

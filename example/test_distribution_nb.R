@@ -38,7 +38,7 @@ fit <- SuSiEIRLS::SuSiE_IRLS(
 
 pip <- fit$fitX$pip[seq_len(p)]
 if (length(pip) != p || any(!is.finite(pip))) stop("NB smoke test failed")
-print(data.frame(family = "nb", iter = fit$iter,
+print(data.frame(family = "nb", iter = fit$diagnostics$iterations,
                  n_cs = nrow(fit$main_index),
                  top_signal_pip = max(pip[true_idx]),
                  theta_hat = fit$theta))
