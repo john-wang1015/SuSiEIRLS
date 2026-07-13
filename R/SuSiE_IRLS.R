@@ -64,6 +64,11 @@
 #'   non-CS residual summary variable. For example, `noncs_var = 0.2`
 #'   adds it when the CS summary explains less than 80% of the posterior mean
 #'   linear predictor variance. Default 0.2.
+#' @param noncs_max_abs_cor Maximum allowed absolute correlation between a
+#'   non-CS term and applicable existing refit covariates, including `Z` and
+#'   credible-set summary variables. Correlations equal to or above the
+#'   threshold are rejected. The effective threshold is capped at 0.9;
+#'   smaller user-supplied values remain effective. Default 0.9.
 #' @param scale_data Logical. If TRUE, standardize `X` with
 #'   `SuSiE4I::large_scale()` and center and scale non-binary columns of `Z`;
 #'   binary columns of `Z` remain on their original scale. If FALSE, `X` and
@@ -106,6 +111,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
                        init_cor_method = NULL,
                        refit_noncs = TRUE,
                        noncs_var = 0.2,
+                       noncs_max_abs_cor = 0.9,
                        scale_data = TRUE,
                        suff_block_size = 10000L,
                        verbose = TRUE, ...) {
@@ -138,6 +144,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
   }
   if (weight_cutoff <= 0) weight_cutoff <- 1e-6
   if (weight_cutoff >= 0.05) weight_cutoff <- 0.049
+  noncs_max_abs_cor <- validate_noncs_max_abs_cor(noncs_max_abs_cor)
 
   # ---- optional standardization ----
   if (isTRUE(scale_data)) {
@@ -226,6 +233,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
         noncs_var = noncs_var,
+        noncs_max_abs_cor = noncs_max_abs_cor,
         suff_block_size = suff_block_size,
         ...
       )
@@ -257,6 +265,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
         noncs_var = noncs_var,
+        noncs_max_abs_cor = noncs_max_abs_cor,
         suff_block_size = suff_block_size,
         ...
       )
@@ -304,6 +313,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
         noncs_var = noncs_var,
+        noncs_max_abs_cor = noncs_max_abs_cor,
         suff_block_size = suff_block_size,
         ...
       )
@@ -333,6 +343,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
         noncs_var = noncs_var,
+        noncs_max_abs_cor = noncs_max_abs_cor,
         suff_block_size = suff_block_size,
         ...
       )
@@ -362,6 +373,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
         noncs_var = noncs_var,
+        noncs_max_abs_cor = noncs_max_abs_cor,
         suff_block_size = suff_block_size,
         ...
       )
@@ -390,6 +402,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
       init_cor_method = init_cor_method,
       refit_noncs = refit_noncs,
       noncs_var = noncs_var,
+      noncs_max_abs_cor = noncs_max_abs_cor,
       suff_block_size = suff_block_size,
       ...
     )

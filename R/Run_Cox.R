@@ -16,6 +16,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
                     init_cor_method = NULL,
                     refit_noncs = TRUE,
                     noncs_var = 0.2,
+                    noncs_max_abs_cor = 0.9,
                     suff_block_size = 10000L, ...) {
 
   run_start <- proc.time()[["elapsed"]]
@@ -99,10 +100,12 @@ Run_Cox <- function(X, y, status, Z = NULL,
     n_eff = ss$d
 
     XZEa = XZE * sqrt(a)
-    A    = blockwise_crossprod(XZEa, n_threads = n_threads,
-                               block_size = suff_block_size)
-    BtB  = blockwise_crossprod(B, n_threads = n_threads,
-                               block_size = suff_block_size)
+    A    = SuSiE4I::blockwise_crossprod(
+      XZEa, n_threads = n_threads, block_size = suff_block_size
+    )
+    BtB  = SuSiE4I::blockwise_crossprod(
+      B, n_threads = n_threads, block_size = suff_block_size
+    )
     XZEtXZE = A - BtB
     XZEtXZE = (XZEtXZE + t(XZEtXZE)) / 2
     idxX = seq_len(p)
@@ -160,7 +163,10 @@ Run_Cox <- function(X, y, status, Z = NULL,
 
     if (length(cs_indices) == 0) {
       if (iter <= min.iter) {
-        noncs_res <- build_no_cs_noncs_refit_term(X, fitX)
+        noncs_res <- build_no_cs_noncs_refit_term(
+          X, fitX, cor_design = Z,
+          noncs_max_abs_cor = noncs_max_abs_cor
+        )
         if (is.null(noncs_res)) {
           early_no_cs <- TRUE
           if (verbose) {
@@ -202,7 +208,8 @@ Run_Cox <- function(X, y, status, Z = NULL,
     if (isTRUE(refit_noncs)) {
       noncs_term <- build_noncs_refit_term(
         X = X, fitX = fitX, CSdt = CSdt, cs_indices = cs_indices,
-        XCS = XCS, noncs_var = noncs_var
+        XCS = XCS, noncs_var = noncs_var,
+        noncs_max_abs_cor = noncs_max_abs_cor, cor_design = Z
       )
       if (!is.null(noncs_term)) {
         XCS_refit <- cbind(XCS_refit, Main_CS_noncs = noncs_term)

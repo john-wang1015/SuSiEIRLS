@@ -231,6 +231,7 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
                     init_cor_method = NULL,
                     refit_noncs = TRUE,
                     noncs_var = 0.2,
+                    noncs_max_abs_cor = 0.9,
                     suff_block_size = 10000L, ...) {
 
   run_start <- proc.time()[["elapsed"]]
@@ -312,7 +313,10 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
 
     if (!length(cs_indices)) {
       if (iter <= min.iter) {
-        noncs_res <- build_no_cs_noncs_refit_term(X, fitX)
+        noncs_res <- build_no_cs_noncs_refit_term(
+          X, fitX, cor_design = Z,
+          noncs_max_abs_cor = noncs_max_abs_cor
+        )
         if (is.null(noncs_res)) {
           early_no_cs <- TRUE
           if (verbose) {
@@ -346,7 +350,8 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
       if (isTRUE(refit_noncs)) {
         noncs_term <- build_noncs_refit_term(
           X = X, fitX = fitX, CSdt = CSdt, cs_indices = cs_indices,
-          XCS = XCS, noncs_var = noncs_var
+          XCS = XCS, noncs_var = noncs_var,
+          noncs_max_abs_cor = noncs_max_abs_cor, cor_design = Z
         )
         if (!is.null(noncs_term)) {
           XCS_refit <- cbind(XCS_refit, Main_CS_noncs = noncs_term)

@@ -29,4 +29,7 @@ Remotes:
     harryyiheyang/CppMatrix,
     harryyiheyang/SuSiE4I,
     stephenslab/susieR
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
 ORCID: 0000-0001-6563-3579

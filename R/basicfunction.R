@@ -48,8 +48,9 @@ weighted_residual_suffstats <- function(X, y, ZI, weights,
   y <- as.numeric(y)
 
   tilde_X <- X * sqrt(weights)
-  XtX <- blockwise_crossprod(tilde_X, n_threads = n_threads,
-                             block_size = block_size)
+  XtX <- SuSiE4I::blockwise_crossprod(
+    tilde_X, n_threads = n_threads, block_size = block_size
+  )
   rm(tilde_X)
   gc(FALSE)
 
@@ -121,8 +122,41 @@ clean_coef <- function(x) {
   as.numeric(x)
 }
 
+validate_noncs_max_abs_cor <- function(x) {
+  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x <= 0) {
+    stop("noncs_max_abs_cor must be a positive finite numeric scalar.")
+  }
+  min(as.numeric(x), 0.9)
+}
+
+noncs_correlation_ok <- function(term, design, max_abs_cor = 0.9) {
+  if (is.null(design)) return(TRUE)
+
+  term <- as.numeric(term)
+  design <- as.matrix(design)
+  if (!length(term) || nrow(design) != length(term)) return(FALSE)
+  if (any(!is.finite(term)) || any(!is.finite(design))) return(FALSE)
+  if (!ncol(design)) return(TRUE)
+
+  term0 <- term - mean(term)
+  term_ss <- sum(term0^2)
+  if (!is.finite(term_ss) || term_ss <= 1e-12) return(FALSE)
+
+  design0 <- sweep(design, 2L, colMeans(design), "-")
+  design_ss <- colSums(design0^2)
+  keep <- is.finite(design_ss) & design_ss > 1e-12
+  if (!any(keep)) return(TRUE)
+
+  cors <- as.numeric(crossprod(design0[, keep, drop = FALSE], term0)) /
+    sqrt(design_ss[keep] * term_ss)
+  max_abs_cor <- validate_noncs_max_abs_cor(max_abs_cor)
+  !any(is.finite(cors) & abs(cors) >= max_abs_cor)
+}
+
 build_noncs_refit_term <- function(X, fitX, CSdt, cs_indices, XCS,
-                                   noncs_var = 0.2) {
+                                   noncs_var = 0.2,
+                                   noncs_max_abs_cor = 0.9,
+                                   cor_design = NULL) {
   if (is.null(fitX) || is.null(CSdt) || !length(cs_indices)) return(NULL)
   if (is.null(XCS) || ncol(as.matrix(XCS)) == 0L) return(NULL)
 
@@ -159,16 +193,16 @@ build_noncs_refit_term <- function(X, fitX, CSdt, cs_indices, XCS,
   if (!is.finite(var_noncs) || var_noncs <= 1e-12) return(NULL)
   if (var_noncs / var_eta_x < noncs_var) return(NULL)
 
-  eta0 <- eta_noncs - mean(eta_noncs)
-  x0 <- sweep(XCS, 2, colMeans(XCS), "-")
-  denom <- sqrt(sum(eta0^2) * colSums(x0^2))
-  cors <- as.numeric(crossprod(x0, eta0)) / denom
-  if (any(is.finite(cors) & abs(cors) >= 0.999)) return(NULL)
+  gate_design <- if (is.null(cor_design)) XCS else cbind(XCS, cor_design)
+  if (!noncs_correlation_ok(
+    eta_noncs, gate_design, max_abs_cor = noncs_max_abs_cor
+  )) return(NULL)
 
   eta_noncs
 }
 
-build_no_cs_noncs_refit_term <- function(X, fitX) {
+build_no_cs_noncs_refit_term <- function(X, fitX, cor_design = NULL,
+                                         noncs_max_abs_cor = 0.9) {
   if (is.null(fitX)) return(NULL)
 
   beta_total <- clean_coef(stats::coef(fitX)[-1L])
@@ -179,6 +213,9 @@ build_no_cs_noncs_refit_term <- function(X, fitX) {
   if (!is.finite(stats::sd(noncs_res)) || stats::sd(noncs_res) <= 1e-8) {
     return(NULL)
   }
+  if (!noncs_correlation_ok(
+    noncs_res, cor_design, max_abs_cor = noncs_max_abs_cor
+  )) return(NULL)
 
   noncs_res
 }

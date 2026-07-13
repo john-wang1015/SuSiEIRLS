@@ -32,6 +32,7 @@ SuSiE_IRLS(
   init_cor_method = NULL,
   refit_noncs = TRUE,
   noncs_var = 0.2,
+  noncs_max_abs_cor = 0.9,
   scale_data = TRUE,
   suff_block_size = 10000L,
   verbose = TRUE,
@@ -119,6 +120,12 @@ reported as a credible set. Default TRUE.}
 non-CS residual summary variable. For example, `noncs_var = 0.2`
 adds it when the CS summary explains less than 80% of the posterior mean
 linear predictor variance. Default 0.2.}
+
+\item{noncs_max_abs_cor}{Maximum allowed absolute correlation between a
+non-CS term and applicable existing refit covariates, including `Z` and
+credible-set summary variables. Correlations equal to or above the
+threshold are rejected. The effective threshold is capped at 0.9;
+smaller user-supplied values remain effective. Default 0.9.}
 
 \item{scale_data}{Logical. If TRUE, standardize `X` with
 `SuSiE4I::large_scale()` and center and scale non-binary columns of `Z`;
