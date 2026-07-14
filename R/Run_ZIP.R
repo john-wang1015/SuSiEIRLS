@@ -170,7 +170,7 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
       block_size = suff_block_size
     )
 
-    updateV <- if (iter <= min.iter) 2 else prior_variance
+    updateV <- if (iter <= min.iter) 2 else 3
     V_main[iter] <- updateV
     fitX <- susieR::susie_ss(
       XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,

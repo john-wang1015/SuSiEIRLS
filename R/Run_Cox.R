@@ -138,7 +138,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
     diag(XtX) = diag(XtX) + ridge
 
     # Run SuSiE-SS on the Cox score sufficient statistics.
-    updateV <- if (iter <= min.iter) 2 else prior_variance
+    updateV <- if (iter <= min.iter) 2 else 3
     V_main[iter] <- updateV
     fitX <- susieR::susie_ss(
       XtX = XtX, Xty = Xty, yty = n - 1, n = n, L = L,

@@ -288,7 +288,7 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     )
 
     n_ss <- max(n / 2, work$n_eff)
-    updateV <- if (iter <= min.iter) 2 else prior_variance
+    updateV <- if (iter <= min.iter) 2 else 3
     V_main[iter] <- updateV
 
     fitX <- susieR::susie_ss(

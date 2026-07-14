@@ -386,7 +386,7 @@ Run_OCAT <- function(X, y, Z = NULL,
       n_threads = n_threads, ridge = ridge, block_size = suff_block_size
     )
 
-    updateV <- if (iter <= min.iter) 2 else prior_variance
+    updateV <- if (iter <= min.iter) 2 else 3
     V_main[iter] <- updateV
     fitX <- susieR::susie_ss(
       XtX = stat$XtX, Xty = stat$Xty, yty = stat$yty,
