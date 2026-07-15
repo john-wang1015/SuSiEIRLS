@@ -110,6 +110,7 @@ clean_coef <- function(x) {
 
 .susie_default_para <- function() {
   list(
+    standardize = FALSE,
     scaled_prior_variance = 2,
     estimate_residual_variance = TRUE,
     residual_variance = 0.5,

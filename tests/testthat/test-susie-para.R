@@ -4,6 +4,7 @@ test_that("SuSiE defaults preserve package settings and native omissions", {
   expect_identical(
     para,
     list(
+      standardize = FALSE,
       scaled_prior_variance = 2,
       estimate_residual_variance = TRUE,
       residual_variance = 0.5,
@@ -36,6 +37,7 @@ test_that("susie_para supports partial native overrides", {
   expect_equal(para$min_abs_corr, 0.2)
   expect_equal(para$max_iter, 7)
   expect_equal(para$coverage, 0.9)
+  expect_false(para$standardize)
 })
 
 test_that("susie_para rejects structural and invalid arguments", {
@@ -72,11 +74,13 @@ test_that("iteration controls retain warm-up behavior", {
   warm <- SuSiEIRLS:::.susie_iteration_args(para, structural, 2, 2)
   update <- SuSiEIRLS:::.susie_iteration_args(para, structural, 3, 2)
   expect_equal(warm$scaled_prior_variance, 2)
+  expect_false(warm$standardize)
   expect_false(warm$estimate_prior_variance)
   expect_true(warm$estimate_residual_variance)
   expect_equal(warm$max_iter, 300)
   expect_equal(warm$coverage, 0.9)
   expect_equal(update$scaled_prior_variance, 1.5)
+  expect_false(update$standardize)
   expect_false(update$estimate_prior_variance)
   expect_false(update$estimate_residual_variance)
   expect_equal(update$max_iter, 7)
@@ -87,6 +91,7 @@ test_that("iteration controls retain warm-up behavior", {
     SuSiEIRLS:::.resolve_susie_para(), structural, 3, 2
   )
   expect_equal(default_update$scaled_prior_variance, 2)
+  expect_false(default_update$standardize)
   expect_true(default_update$estimate_prior_variance)
 })
 
