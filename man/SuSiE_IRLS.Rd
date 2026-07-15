@@ -13,7 +13,7 @@ SuSiE_IRLS(
   n_threads = 4,
   L = 10,
   susie_para = NULL,
-  max.iter = 15,
+  max.iter = 10,
   max.eps = 1e-05,
   min.iter = 2,
   weight_cutoff = 0.0025,
@@ -53,13 +53,14 @@ ZIP refits. `NULL` uses `gam` when `n < 50000` and `bam` otherwise.}
 `susieR::susie_ss()`. Only parameters supplied by the user are overridden.
 Sufficient statistics `XtX`, `Xty`, `yty`, and `n` are constructed by
 SuSiEIRLS and cannot be supplied here. `L` remains a separate argument of
-`SuSiE_IRLS()`. With `NULL`, the current SuSiEIRLS
-defaults are used: residual-variance estimation starts at 0.5 with bounds
-0.1 and 1, scaled prior variance is 2 during warm-up and starts from 3
-afterward with the `"optim"` update, `max_iter = 30`, and
-`coverage = 0.9`. Other parameters use the native `susie_ss()` defaults.}
+`SuSiE_IRLS()`. During `iter <= min.iter`, this list is ignored and the
+package warm-up defaults are used. Afterward, supplied values override the
+defaults: residual-variance estimation starts at 0.5 with bounds 0.1 and
+1.01, scaled prior variance starts at 2 with the `"optim"` update,
+`max_iter = 30`, and `coverage = 0.9`. Other parameters use the native
+`susie_ss()` defaults.}
 
-\item{max.iter}{Maximum outer iterations. Default 15.}
+\item{max.iter}{Maximum outer iterations. Default 10.}
 
 \item{max.eps}{Convergence threshold on max parameter change. Default 1e-5.}
 

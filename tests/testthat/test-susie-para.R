@@ -1,13 +1,14 @@
-test_that("susie_para preserves package defaults and native omissions", {
-  para <- SuSiEIRLS:::.resolve_susie_para()
+test_that("SuSiE defaults preserve package settings and native omissions", {
+  para <- SuSiEIRLS:::.susie_default_para()
 
   expect_identical(
     para,
     list(
+      scaled_prior_variance = 2,
       estimate_residual_variance = TRUE,
       residual_variance = 0.5,
       residual_variance_lowerbound = 0.1,
-      residual_variance_upperbound = 1,
+      residual_variance_upperbound = 1.01,
       estimate_prior_variance = TRUE,
       estimate_prior_method = "optim",
       max_iter = 30,
@@ -19,11 +20,17 @@ test_that("susie_para preserves package defaults and native omissions", {
 })
 
 test_that("susie_para supports partial native overrides", {
-  para <- SuSiEIRLS:::.resolve_susie_para(list(
+  user_para <- SuSiEIRLS:::.resolve_susie_para(list(
     estimate_residual_variance = FALSE,
     min_abs_corr = 0.2,
     max_iter = 7
   ))
+  structural <- list(
+    XtX = diag(2), Xty = c(1, 0), yty = 1, n = 10, L = 2
+  )
+  para <- SuSiEIRLS:::.susie_iteration_args(
+    user_para, structural, iter = 3, min.iter = 2
+  )
 
   expect_false(para$estimate_residual_variance)
   expect_equal(para$min_abs_corr, 0.2)
@@ -51,7 +58,13 @@ test_that("susie_para rejects structural and invalid arguments", {
 })
 
 test_that("iteration controls retain warm-up behavior", {
-  para <- SuSiEIRLS:::.resolve_susie_para()
+  para <- SuSiEIRLS:::.resolve_susie_para(list(
+    scaled_prior_variance = 1.5,
+    estimate_prior_variance = FALSE,
+    estimate_residual_variance = FALSE,
+    max_iter = 7,
+    coverage = 0.8
+  ))
   structural <- list(
     XtX = diag(2), Xty = c(1, 0), yty = 1, n = 10, L = 2
   )
@@ -60,17 +73,25 @@ test_that("iteration controls retain warm-up behavior", {
   update <- SuSiEIRLS:::.susie_iteration_args(para, structural, 3, 2)
   expect_equal(warm$scaled_prior_variance, 2)
   expect_false(warm$estimate_prior_variance)
-  expect_equal(update$scaled_prior_variance, 3)
-  expect_true(update$estimate_prior_variance)
+  expect_true(warm$estimate_residual_variance)
+  expect_equal(warm$max_iter, 30)
+  expect_equal(warm$coverage, 0.9)
+  expect_equal(update$scaled_prior_variance, 1.5)
+  expect_false(update$estimate_prior_variance)
+  expect_false(update$estimate_residual_variance)
+  expect_equal(update$max_iter, 7)
+  expect_equal(update$coverage, 0.8)
   expect_identical(update$XtX, structural$XtX)
 
-  fixed <- SuSiEIRLS:::.resolve_susie_para(list(
-    scaled_prior_variance = 1.5,
-    estimate_prior_variance = FALSE
-  ))
-  fixed <- SuSiEIRLS:::.susie_iteration_args(fixed, structural, 3, 2)
-  expect_equal(fixed$scaled_prior_variance, 1.5)
-  expect_false(fixed$estimate_prior_variance)
+  default_update <- SuSiEIRLS:::.susie_iteration_args(
+    SuSiEIRLS:::.resolve_susie_para(), structural, 3, 2
+  )
+  expect_equal(default_update$scaled_prior_variance, 2)
+  expect_true(default_update$estimate_prior_variance)
+})
+
+test_that("outer iteration default is 10", {
+  expect_equal(formals(SuSiE_IRLS)$max.iter, 10)
 })
 
 test_that("susie_para is the only SuSiE parameter interface", {

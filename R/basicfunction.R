@@ -110,10 +110,11 @@ clean_coef <- function(x) {
 
 .susie_default_para <- function() {
   list(
+    scaled_prior_variance = 2,
     estimate_residual_variance = TRUE,
     residual_variance = 0.5,
     residual_variance_lowerbound = 0.1,
-    residual_variance_upperbound = 1,
+    residual_variance_upperbound = 1.01,
     estimate_prior_variance = TRUE,
     estimate_prior_method = "optim",
     max_iter = 30,
@@ -152,23 +153,19 @@ clean_coef <- function(x) {
 }
 
 .resolve_susie_para <- function(susie_para = NULL) {
-  susie_para <- .validate_susie_para(susie_para)
-  out <- .susie_default_para()
-  if (length(susie_para)) out[names(susie_para)] <- susie_para
-
-  epv <- out$estimate_prior_variance
-  if (!is.logical(epv) || length(epv) != 1L || is.na(epv)) {
-    stop("susie_para$estimate_prior_variance must be TRUE or FALSE.")
-  }
-  out
+  .validate_susie_para(susie_para)
 }
 
 .susie_iteration_args <- function(susie_para, structural, iter, min.iter) {
-  args <- susie_para
-  estimate_prior <- args$estimate_prior_variance
-  args$estimate_prior_variance <- iter > min.iter && isTRUE(estimate_prior)
-  if (!("scaled_prior_variance" %in% names(args))) {
-    args$scaled_prior_variance <- if (iter <= min.iter) 2 else 3
+  args <- .susie_default_para()
+  if (iter > min.iter && length(susie_para)) {
+    args[names(susie_para)] <- susie_para
+  }
+  if (iter <= min.iter) args$estimate_prior_variance <- FALSE
+
+  epv <- args$estimate_prior_variance
+  if (!is.logical(epv) || length(epv) != 1L || is.na(epv)) {
+    stop("susie_para$estimate_prior_variance must be TRUE or FALSE.")
   }
   args[names(structural)] <- structural
   args
