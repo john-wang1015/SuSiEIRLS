@@ -363,7 +363,6 @@ Run_OCAT <- function(X, y, Z = NULL,
   early_no_cs <- FALSE
   fitX <- NULL
   XCS <- NULL
-  V_main <- numeric(0)
   stat <- NULL
 
   for (iter in seq_len(max.iter)) {
@@ -382,7 +381,6 @@ Run_OCAT <- function(X, y, Z = NULL,
            n = n, L = L),
       iter, min.iter
     )
-    V_main <- .record_prior_variance(V_main, ss_args$scaled_prior_variance)
     fitX <- do.call(susieR::susie_ss, ss_args)
 
     beta <- clean_coef(stats::coef(fitX)[-1L])
@@ -466,15 +464,13 @@ Run_OCAT <- function(X, y, Z = NULL,
   if (early_no_cs) {
     G <- .ocat_coef_table(fit_final)
     MainIndex <- safe_add_p(MainIndex, G)
+    fit_final$n_eff <- if (!is.null(stat)) stat$n_eff else NA_real_
     fit_final <- clean_model_environment(fit_final)
     return(list(
       diagnostics = make_diagnostics(iter, g, run_start),
       fitX = fitX,
       fitJoint = fit_final,
-      main_index = MainIndex,
-      JointCoef = G,
-      n_eff = if (!is.null(stat)) stat$n_eff else NA_real_,
-      prior_variance_main = V_main
+      main_index = MainIndex
     ))
   }
 
@@ -487,6 +483,7 @@ Run_OCAT <- function(X, y, Z = NULL,
 
   G <- .ocat_coef_table(fit_final)
   MainIndex <- safe_add_p(MainIndex, G)
+  fit_final$n_eff <- if (!is.null(stat)) stat$n_eff else NA_real_
   fit_final <- clean_model_environment(fit_final)
 
   if (verbose && length(g)) {
@@ -507,15 +504,7 @@ Run_OCAT <- function(X, y, Z = NULL,
     ),
     fitX = fitX,
     fitJoint = fit_final,
-    main_index = MainIndex,
-    JointCoef = G,
-    n_eff = if (!is.null(stat)) stat$n_eff else NA_real_,
-    score_diagnostics = if (!is.null(stat)) {
-      stat[c("min_pr", "min_h", "med_h", "max_h")]
-    } else {
-      NULL
-    },
-    prior_variance_main = V_main
+    main_index = MainIndex
   )
 }
 

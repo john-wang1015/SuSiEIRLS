@@ -61,7 +61,6 @@ Run_Cox <- function(X, y, status, Z = NULL,
   alpha_prev = alpha * 0
   early_no_cs <- FALSE
   XCS <- NULL
-  V_main <- numeric(0)
 
   # ============================================
   # Main iteration loop
@@ -132,7 +131,6 @@ Run_Cox <- function(X, y, status, Z = NULL,
       list(XtX = XtX, Xty = Xty, yty = n - 1, n = n, L = L),
       iter, min.iter
     )
-    V_main <- .record_prior_variance(V_main, ss_args$scaled_prior_variance)
     fitX <- do.call(susieR::susie_ss, ss_args)
 
     beta = clean_coef(coef(fitX)[-1])
@@ -244,14 +242,13 @@ Run_Cox <- function(X, y, status, Z = NULL,
     MainIndex <- Identifying_MainEffect(fitX, colnames(X))
     G <- summary(fit_final)$coefficients
     MainIndex <- safe_add_p(MainIndex, G)
+    fit_final$n_eff <- n_eff
     fit_final <- clean_model_environment(fit_final)
     return(list(
       diagnostics = make_diagnostics(iter, g, run_start),
       fitX = fitX,
       fitJoint = fit_final,
-      main_index = MainIndex,
-      JointCoef = G,
-      prior_variance_main = V_main
+      main_index = MainIndex
     ))
   }
 
@@ -265,6 +262,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
   MainIndex = Identifying_MainEffect(fitX, colnames(X))
   G = summary(fit_final)$coefficients[, -2, drop = FALSE]
   MainIndex <- safe_add_p(MainIndex, G)
+  fit_final$n_eff <- n_eff
   fit_final <- clean_model_environment(fit_final)
 
   if (verbose) {
@@ -283,9 +281,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
     diagnostics = make_diagnostics(iter, g, run_start),
     fitX = fitX,
     fitJoint = fit_final,
-    main_index = MainIndex,
-    JointCoef = G,
-    prior_variance_main = V_main
+    main_index = MainIndex
   )
 
   return(AA)

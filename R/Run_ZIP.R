@@ -131,7 +131,6 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
   alpha_prev <- alpha * 0
   fitX <- NULL
   XCS <- NULL
-  V_main <- numeric(0)
   early_no_cs <- FALSE
   work <- NULL
 
@@ -152,10 +151,9 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
     ss_args <- .susie_iteration_args(
       susie_para,
       list(XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
-           n = max(n / 2, work$n_eff), L = L),
+           n = max(0.9 * n, work$n_eff), L = L),
       iter, min.iter
     )
-    V_main <- .record_prior_variance(V_main, ss_args$scaled_prior_variance)
     fitX <- do.call(susieR::susie_ss, ss_args)
     rm(suff)
 
@@ -249,6 +247,7 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
 
   G <- tryCatch(summary(fit_final)$p.table, error = function(e) NULL)
   if (!is.null(G)) MainIndex <- safe_add_p(MainIndex, G)
+  fit_final$n_eff <- if (!is.null(work)) work$n_eff else NA_real_
   fit_final <- clean_model_environment(fit_final)
 
   if (verbose && length(g)) {
@@ -269,11 +268,6 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
     ),
     fitX = fitX,
     fitJoint = fit_final,
-    main_index = MainIndex,
-    JointCoef = G,
-    n_eff = if (!is.null(work)) work$n_eff else NA_real_,
-    theta = .zip_theta(fit_final, transformed = TRUE),
-    theta_raw = .zip_theta(fit_final, transformed = FALSE),
-    prior_variance_main = V_main
+    main_index = MainIndex
   )
 }

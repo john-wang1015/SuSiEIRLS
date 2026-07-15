@@ -258,7 +258,6 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
   alpha_prev <- alpha * 0
   fitX <- NULL
   XCS <- NULL
-  V_main <- numeric(0)
   early_no_cs <- FALSE
 
   for (iter in seq_len(max.iter)) {
@@ -275,14 +274,13 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
       block_size = suff_block_size
     )
 
-    n_ss <- max(n / 2, work$n_eff)
+    n_ss <- max(0.9 * n, work$n_eff)
     ss_args <- .susie_iteration_args(
       susie_para,
       list(XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
            n = n_ss, L = L),
       iter, min.iter
     )
-    V_main <- .record_prior_variance(V_main, ss_args$scaled_prior_variance)
     fitX <- do.call(susieR::susie_ss, ss_args)
     rm(suff)
 
@@ -376,6 +374,7 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
 
   G <- tryCatch(summary(fit_final)$p.table, error = function(e) NULL)
   if (!is.null(G)) MainIndex <- safe_add_p(MainIndex, G)
+  fit_final$n_eff <- if (exists("work")) work$n_eff else NA_real_
   fit_final <- clean_model_environment(fit_final)
 
   if (verbose && length(g)) {
@@ -396,10 +395,6 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
     ),
     fitX = fitX,
     fitJoint = fit_final,
-    main_index = MainIndex,
-    JointCoef = G,
-    n_eff = if (exists("work")) work$n_eff else NA_real_,
-    theta = .mgcv_theta(fit_final),
-    prior_variance_main = V_main
+    main_index = MainIndex
   )
 }

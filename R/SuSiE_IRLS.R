@@ -39,7 +39,7 @@
 #'   package warm-up defaults are used. Afterward, supplied values override the
 #'   defaults: residual-variance estimation starts at 0.5 with bounds 0.1 and
 #'   1.01, scaled prior variance starts at 2 with the `"optim"` update,
-#'   `max_iter = 30`, and `coverage = 0.9`. Other parameters use the native
+#'   `max_iter = 300`, and `coverage = 0.9`. Other parameters use the native
 #'   `susie_ss()` defaults.
 #' @param weight_cutoff Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.0025.
 #' @param refit_noncs Logical. If TRUE, add a one-dimensional non-CS residual
@@ -64,10 +64,11 @@
 #' @param suff_block_size Row block size for weighted sufficient-statistic
 #'   crossproducts. Larger values can be faster for small-to-moderate p when
 #'   memory is sufficient. Default 10000.
-#' @return A list containing the main-effect SuSiE fit, final joint model,
-#'   discovery and coefficient summaries, convergence information, and the
-#'   prior variance used at each outer iteration. `diagnostics` contains the
-#'   number of outer iterations, final convergence eps, and runtime in seconds.
+#' @return A list containing the main-effect SuSiE fit, final joint model, and
+#'   main-effect discovery table. `diagnostics` is a one-row data frame
+#'   containing the number of outer iterations, final convergence eps, and
+#'   runtime in seconds. The effective sample size used by the algorithm is
+#'   stored in `fitJoint$n_eff`.
 #'
 #' @importFrom stats var lm coef glm
 #' @importFrom susieR susie_ss coef.susie

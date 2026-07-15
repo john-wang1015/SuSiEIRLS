@@ -25,7 +25,7 @@ solve_with_ridge <- function(A, B = NULL, ridge = 1e-8) {
 
 make_diagnostics <- function(iterations, eps, start_time) {
   final_eps <- if (length(eps)) as.numeric(utils::tail(eps, 1L)) else NA_real_
-  list(
+  data.frame(
     iterations = as.integer(iterations),
     eps = final_eps,
     runtime_seconds = unname(proc.time()[["elapsed"]] - start_time)
@@ -117,7 +117,7 @@ clean_coef <- function(x) {
     residual_variance_upperbound = 1.01,
     estimate_prior_variance = TRUE,
     estimate_prior_method = "optim",
-    max_iter = 30,
+    max_iter = 300,
     coverage = 0.9
   )
 }
@@ -169,15 +169,6 @@ clean_coef <- function(x) {
   }
   args[names(structural)] <- structural
   args
-}
-
-.record_prior_variance <- function(history, value) {
-  if (!is.list(history) && is.numeric(value) && length(value) == 1L) {
-    return(c(history, value))
-  }
-  if (!is.list(history)) history <- as.list(history)
-  history[[length(history) + 1L]] <- value
-  history
 }
 
 validate_noncs_max_abs_cor <- function(x) {

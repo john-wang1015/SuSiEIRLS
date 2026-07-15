@@ -11,7 +11,7 @@ test_that("SuSiE defaults preserve package settings and native omissions", {
       residual_variance_upperbound = 1.01,
       estimate_prior_variance = TRUE,
       estimate_prior_method = "optim",
-      max_iter = 30,
+      max_iter = 300,
       coverage = 0.9
     )
   )
@@ -74,7 +74,7 @@ test_that("iteration controls retain warm-up behavior", {
   expect_equal(warm$scaled_prior_variance, 2)
   expect_false(warm$estimate_prior_variance)
   expect_true(warm$estimate_residual_variance)
-  expect_equal(warm$max_iter, 30)
+  expect_equal(warm$max_iter, 300)
   expect_equal(warm$coverage, 0.9)
   expect_equal(update$scaled_prior_variance, 1.5)
   expect_false(update$estimate_prior_variance)
@@ -92,6 +92,18 @@ test_that("iteration controls retain warm-up behavior", {
 
 test_that("outer iteration default is 10", {
   expect_equal(formals(SuSiE_IRLS)$max.iter, 10)
+})
+
+test_that("diagnostics use a one-row data frame", {
+  d <- SuSiEIRLS:::make_diagnostics(
+    3, c(0.2, 0.1), proc.time()[["elapsed"]]
+  )
+
+  expect_s3_class(d, "data.frame")
+  expect_equal(nrow(d), 1)
+  expect_identical(names(d), c("iterations", "eps", "runtime_seconds"))
+  expect_equal(d$iterations, 3L)
+  expect_equal(d$eps, 0.1)
 })
 
 test_that("susie_para is the only SuSiE parameter interface", {

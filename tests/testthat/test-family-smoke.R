@@ -4,6 +4,19 @@ standardize_matrix <- function(X) {
   X
 }
 
+expect_minimal_output <- function(fit) {
+  expect_identical(
+    names(fit), c("diagnostics", "fitX", "fitJoint", "main_index")
+  )
+  expect_s3_class(fit$diagnostics, "data.frame")
+  expect_equal(nrow(fit$diagnostics), 1)
+  expect_identical(
+    names(fit$diagnostics), c("iterations", "eps", "runtime_seconds")
+  )
+  expect_true(is.numeric(fit$fitJoint$n_eff))
+  expect_length(fit$fitJoint$n_eff, 1)
+}
+
 test_that("public inputs keep package and external-package controls separate", {
   public <- names(formals(SuSiE_IRLS))
 
@@ -33,6 +46,7 @@ test_that("GLM non-CS runner completes a real smoke fit", {
 
   fit <- do.call(SuSiE_IRLS, c(list(X = X, Z = Z, y = y), smoke_args()))
   expect_s3_class(fit$fitX, "susie")
+  expect_minimal_output(fit)
 })
 
 test_that("Cox non-CS runner completes a real smoke fit", {
@@ -49,6 +63,7 @@ test_that("Cox non-CS runner completes a real smoke fit", {
     list(X = X, Z = Z, y = y, family = "cox"), smoke_args()
   ))
   expect_s3_class(fit$fitX, "susie")
+  expect_minimal_output(fit)
 })
 
 test_that("ordinal non-CS runner completes a real smoke fit", {
@@ -64,6 +79,7 @@ test_that("ordinal non-CS runner completes a real smoke fit", {
     list(X = X, Z = Z, y = y, family = "clm_logit"), smoke_args()
   ))
   expect_s3_class(fit$fitX, "susie")
+  expect_minimal_output(fit)
 })
 
 test_that("ZIP non-CS runner completes a real smoke fit", {
@@ -80,4 +96,5 @@ test_that("ZIP non-CS runner completes a real smoke fit", {
     list(X = X, Z = Z, y = y, family = mgcv::ziP()), smoke_args()
   ))
   expect_s3_class(fit$fitX, "susie")
+  expect_minimal_output(fit)
 })

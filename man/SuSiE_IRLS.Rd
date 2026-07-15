@@ -57,7 +57,7 @@ SuSiEIRLS and cannot be supplied here. `L` remains a separate argument of
 package warm-up defaults are used. Afterward, supplied values override the
 defaults: residual-variance estimation starts at 0.5 with bounds 0.1 and
 1.01, scaled prior variance starts at 2 with the `"optim"` update,
-`max_iter = 30`, and `coverage = 0.9`. Other parameters use the native
+`max_iter = 300`, and `coverage = 0.9`. Other parameters use the native
 `susie_ss()` defaults.}
 
 \item{max.iter}{Maximum outer iterations. Default 10.}
@@ -102,10 +102,11 @@ memory is sufficient. Default 10000.}
 \item{verbose}{Logical flag for progress printing. Default TRUE.}
 }
 \value{
-A list containing the main-effect SuSiE fit, final joint model,
-  discovery and coefficient summaries, convergence information, and the
-  prior variance used at each outer iteration. `diagnostics` contains the
-  number of outer iterations, final convergence eps, and runtime in seconds.
+A list containing the main-effect SuSiE fit, final joint model, and
+  main-effect discovery table. `diagnostics` is a one-row data frame
+  containing the number of outer iterations, final convergence eps, and
+  runtime in seconds. The effective sample size used by the algorithm is
+  stored in `fitJoint$n_eff`.
 }
 \description{
 Iterates between IRLS-based pseudo-response construction and SuSiE fine-mapping
