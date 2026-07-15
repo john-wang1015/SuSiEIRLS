@@ -25,16 +25,10 @@ a <- stats::uniroot(
 mu <- exp(a + eta)
 y <- stats::rnbinom(n, size = 2.5, mu = mu)
 
-fit <- SuSiEIRLS::SuSiE_IRLS(
-  X = X, Z = Z, y = y,
-  family = mgcv::nb(theta = NULL, link = "log"),
-  L = 2L, L.init = 1L,
-  max.iter = 3L, min.iter = 1L, max.eps = 1e-3,
-  susie.iter = 80L,
-  n_threads = 1L,
-  verbose = FALSE,
-  scale_data = FALSE
-)
+fit <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, family = mgcv::nb(theta = NULL,
+           link = "log"), L = 2L, L.init = 1L, max.iter = 3L, min.iter = 1L,
+           max.eps = 0.001, n_threads = 1L, scale_data = FALSE, susie_para = list(max_iter = 80L,
+               verbose = FALSE))
 
 pip <- fit$fitX$pip[seq_len(p)]
 if (length(pip) != p || any(!is.finite(pip))) stop("NB smoke test failed")

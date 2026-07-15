@@ -140,7 +140,6 @@
 }
 
 .mgcv_greedy_warm_start <- function(X, response_info, Z, family, L.init = 1,
-                                    init_cor_method = NULL,
                                     mgcv_model = NULL) {
   p <- ncol(X)
   k_init <- init_k_from_L(L.init, p)
@@ -166,7 +165,7 @@
   fit
 }
 
-.mgcv_extract_working <- function(fit, weight_cutoff = 0.005) {
+.mgcv_extract_working <- function(fit, weight_cutoff = 0.0025) {
   eta <- as.numeric(fit$linear.predictors)
   mu <- as.numeric(fit$fitted.values)
   y_work <- as.numeric(fit$y)
@@ -217,31 +216,21 @@
 #' @importFrom mgcv gam bam nb tw betar scat
 #' @keywords internal
 #' @noRd
-Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
+Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
                     family = binomial(link = "logit"),
                     mgcv_model = NULL,
-                    L, max.iter, min.iter, max.eps, susie.iter,
-                    verbose = TRUE, n_threads = 1, coverage = 0.9,
-                    estimate_residual_variance = TRUE,
-                    residual_variance = 0.5, prior_variance = 1,
-                    estimate_prior_variance = TRUE,
-                    residual_variance_lowerbound = 0.1,
-                    residual_variance_upperbound = 1,
+                    L, max.iter, min.iter, max.eps, susie_para,
+                    verbose = TRUE, n_threads = 1,
                     L.init = 1,
-                    init_cor_method = NULL,
                     refit_noncs = TRUE,
-                    noncs_var = 0.2,
+                    noncs_var = 0.1,
                     noncs_max_abs_cor = 0.9,
-                    suff_block_size = 10000L, ...) {
+                    suff_block_size = 10000L) {
 
   run_start <- proc.time()[["elapsed"]]
   n <- NROW(y)
   p <- ncol(X)
   suff_block_size <- validate_suff_block_size(suff_block_size)
-  estimate_prior_variance <- .validate_estimate_prior_variance(
-    estimate_prior_variance
-  )
-  prior_variance <- .validate_prior_variance(prior_variance)
   .mgcv_validate_family(family)
   response_info <- .mgcv_prepare_response(y, family)
   if (response_info$n != nrow(X)) stop("Length(y) must equal nrow(X).")
@@ -259,8 +248,7 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
 
   fit_final <- .mgcv_greedy_warm_start(
     X = X, response_info = response_info, Z = Z, family = family,
-    L.init = L.init, init_cor_method = init_cor_method,
-    mgcv_model = mgcv_model
+    L.init = L.init, mgcv_model = mgcv_model
   )
 
   alpha <- clean_coef(stats::coef(fit_final)[seq_len(ncol(ZI))])
@@ -288,23 +276,14 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     )
 
     n_ss <- max(n / 2, work$n_eff)
-    updateV <- if (iter <= min.iter) 2 else 3
-    V_main[iter] <- updateV
-
-    fitX <- susieR::susie_ss(
-      XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
-      n = n_ss, L = L,
-      scaled_prior_variance = updateV,
-      estimate_prior_variance = iter > min.iter &&
-        isTRUE(estimate_prior_variance),
-      estimate_residual_variance = estimate_residual_variance,
-      residual_variance = residual_variance,
-      residual_variance_lowerbound = residual_variance_lowerbound,
-      residual_variance_upperbound = residual_variance_upperbound,
-      max_iter = susie.iter,
-      estimate_prior_method = "optim",
-      coverage = coverage, ...
+    ss_args <- .susie_iteration_args(
+      susie_para,
+      list(XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
+           n = n_ss, L = L),
+      iter, min.iter
     )
+    V_main <- .record_prior_variance(V_main, ss_args$scaled_prior_variance)
+    fitX <- do.call(susieR::susie_ss, ss_args)
     rm(suff)
 
     beta <- clean_coef(stats::coef(fitX)[-1])

@@ -108,18 +108,79 @@ clean_coef <- function(x) {
   x
 }
 
-.validate_estimate_prior_variance <- function(x) {
-  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
-    stop("estimate_prior_variance must be TRUE or FALSE.")
+.susie_default_para <- function() {
+  list(
+    estimate_residual_variance = TRUE,
+    residual_variance = 0.5,
+    residual_variance_lowerbound = 0.1,
+    residual_variance_upperbound = 1,
+    estimate_prior_variance = TRUE,
+    estimate_prior_method = "optim",
+    max_iter = 30,
+    coverage = 0.9
+  )
+}
+
+.validate_susie_para <- function(x, arg = "susie_para") {
+  if (is.null(x)) return(list())
+  if (!is.list(x)) stop(arg, " must be NULL or a named list.")
+  if (!length(x)) return(list())
+  nm <- names(x)
+  if (is.null(nm) || any(!nzchar(nm))) {
+    stop(arg, " must be a named list.")
+  }
+  if (anyDuplicated(nm)) stop(arg, " must not contain duplicate names.")
+
+  protected <- c("XtX", "Xty", "yty", "n", "L")
+  blocked <- intersect(nm, protected)
+  if (length(blocked)) {
+    stop(
+      arg, " cannot set structural SuSiE inputs: ",
+      paste(blocked, collapse = ", "), "."
+    )
+  }
+
+  valid <- names(formals(susieR::susie_ss))
+  unknown <- setdiff(nm, valid)
+  if (length(unknown)) {
+    stop(
+      "Unknown susieR::susie_ss parameter in ", arg, ": ",
+      paste(unknown, collapse = ", "), "."
+    )
   }
   x
 }
 
-.validate_prior_variance <- function(x) {
-  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x < 0) {
-    stop("prior_variance must be a non-negative finite scalar.")
+.resolve_susie_para <- function(susie_para = NULL) {
+  susie_para <- .validate_susie_para(susie_para)
+  out <- .susie_default_para()
+  if (length(susie_para)) out[names(susie_para)] <- susie_para
+
+  epv <- out$estimate_prior_variance
+  if (!is.logical(epv) || length(epv) != 1L || is.na(epv)) {
+    stop("susie_para$estimate_prior_variance must be TRUE or FALSE.")
   }
-  as.numeric(x)
+  out
+}
+
+.susie_iteration_args <- function(susie_para, structural, iter, min.iter) {
+  args <- susie_para
+  estimate_prior <- args$estimate_prior_variance
+  args$estimate_prior_variance <- iter > min.iter && isTRUE(estimate_prior)
+  if (!("scaled_prior_variance" %in% names(args))) {
+    args$scaled_prior_variance <- if (iter <= min.iter) 2 else 3
+  }
+  args[names(structural)] <- structural
+  args
+}
+
+.record_prior_variance <- function(history, value) {
+  if (!is.list(history) && is.numeric(value) && length(value) == 1L) {
+    return(c(history, value))
+  }
+  if (!is.list(history)) history <- as.list(history)
+  history[[length(history) + 1L]] <- value
+  history
 }
 
 validate_noncs_max_abs_cor <- function(x) {
@@ -154,7 +215,7 @@ noncs_correlation_ok <- function(term, design, max_abs_cor = 0.9) {
 }
 
 build_noncs_refit_term <- function(X, fitX, CSdt, cs_indices, XCS,
-                                   noncs_var = 0.2,
+                                   noncs_var = 0.1,
                                    noncs_max_abs_cor = 0.9,
                                    cor_design = NULL) {
   if (is.null(fitX) || is.null(CSdt) || !length(cs_indices)) return(NULL)
@@ -331,8 +392,7 @@ select_by_residual_score <- function(X, residual, available) {
   which.max(abs(scores))
 }
 
-greedy_cox_warm_start <- function(X, y, status, Z, L.init = 1,
-                                  init_cor_method = NULL) {
+greedy_cox_warm_start <- function(X, y, status, Z, L.init = 1) {
   p <- ncol(X)
   k_init <- init_k_from_L(L.init, p)
   selected <- integer(0)

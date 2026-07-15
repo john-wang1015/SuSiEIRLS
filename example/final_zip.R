@@ -281,15 +281,13 @@ for (n in ns) {
         }
 
         t1 <- proc.time()[["elapsed"]]
-        fit_irls <- SuSiEIRLS::SuSiE_IRLS(
-          X = X, y = y, Z = Z, family = mgcv::ziP(),
-          L = L, max.iter = irls_max_iter, min.iter = 2L, max.eps = 1e-4,
-          susie.iter = susie_iter, verbose = FALSE, n_threads = irls_threads,
-          coverage = coverage, estimate_residual_variance = TRUE,
-          residual_variance = 0.5, residual_variance_lowerbound = 0.1,
-          residual_variance_upperbound = 1, L.init = 1L,
-          suff_block_size = 5000L
-        )
+        fit_irls <- SuSiEIRLS::SuSiE_IRLS(X = X, y = y, Z = Z, family = mgcv::ziP(),
+                        L = L, max.iter = irls_max_iter, min.iter = 2L, max.eps = 1e-04,
+                        n_threads = irls_threads, L.init = 1L, suff_block_size = 5000L,
+                        susie_para = list(max_iter = susie_iter, coverage = coverage,
+                            estimate_residual_variance = TRUE, residual_variance = 0.5,
+                            residual_variance_lowerbound = 0.1, residual_variance_upperbound = 1,
+                            verbose = FALSE))
         pip <- fit_irls$fitX$pip[seq_len(p)]
         evals <- eval_cs_pip(fit_irls$main_index, pip, true_idx, p, coverage)
         evals$pip_true_mean <- mean(pip[true_idx])

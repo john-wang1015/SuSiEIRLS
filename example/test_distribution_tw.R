@@ -25,16 +25,10 @@ a <- stats::uniroot(
 mu <- exp(a + eta)
 y <- mgcv::rTweedie(mu = mu, p = 1.3, phi = 1.2)
 
-fit <- SuSiEIRLS::SuSiE_IRLS(
-  X = X, Z = Z, y = y,
-  family = mgcv::tw(theta = NULL, link = "log"),
-  L = 2L, L.init = 1L,
-  max.iter = 3L, min.iter = 1L, max.eps = 1e-3,
-  susie.iter = 80L,
-  n_threads = 1L,
-  verbose = FALSE,
-  scale_data = FALSE
-)
+fit <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, family = mgcv::tw(theta = NULL,
+           link = "log"), L = 2L, L.init = 1L, max.iter = 3L, min.iter = 1L,
+           max.eps = 0.001, n_threads = 1L, scale_data = FALSE, susie_para = list(max_iter = 80L,
+               verbose = FALSE))
 
 pip <- fit$fitX$pip[seq_len(p)]
 if (length(pip) != p || any(!is.finite(pip))) stop("Tweedie smoke test failed")

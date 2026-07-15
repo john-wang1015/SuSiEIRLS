@@ -12,31 +12,18 @@ SuSiE_IRLS(
   mgcv_model = NULL,
   n_threads = 4,
   L = 10,
-  coverage = 0.9,
-  estimate_residual_variance = TRUE,
-  residual_variance = 0.5,
-  residual_variance_lowerbound = 0.1,
-  residual_variance_upperbound = NULL,
-  prior_variance = 1,
-  estimate_prior_variance = TRUE,
+  susie_para = NULL,
   max.iter = 15,
   max.eps = 1e-05,
-  min.iter = 3,
-  weight_cutoff = 0.005,
-  susie.iter = 30,
-  ridge = 1e-06,
-  zip_theta = NULL,
-  zip_b = 0,
-  zip_info = c("expected", "observed"),
+  min.iter = 2,
+  weight_cutoff = 0.0025,
   L.init = 1,
-  init_cor_method = NULL,
   refit_noncs = TRUE,
-  noncs_var = 0.2,
+  noncs_var = 0.1,
   noncs_max_abs_cor = 0.9,
   scale_data = TRUE,
   suff_block_size = 10000L,
-  verbose = TRUE,
-  ...
+  verbose = TRUE
 )
 }
 \arguments{
@@ -47,10 +34,11 @@ SuSiE_IRLS(
 \item{y}{Response vector, or a `survival::Surv` object for Cox PH.}
 
 \item{family}{A GLM or mgcv family object, such as
-`binomial(link = "logit")` or `mgcv::nb(theta = NULL)`. The strings
-`"negbin"`, `"zip"`, and `"ocat"` select their corresponding paths.
-Cumulative-link models use `"clm_logit"`, `"clm_probit"`,
-`"clm_cloglog"`, `"clm_loglog"`, or `"clm_cauchit"`. An
+`binomial(link = "logit")`, `mgcv::nb(theta = NULL)`,
+`mgcv::ziP(theta = NULL, b = 0)`, or `mgcv::ocat(R = 4)`. Parameters
+belonging to an mgcv family are supplied directly to its constructor.
+Cumulative-link models use names such as `"clm_logit"` or
+`"clm_probit"`. An
 `mgcv::ocat(R = )` family object is also accepted. This argument is ignored
 when `y` is a `Surv` object.}
 
@@ -61,54 +49,27 @@ ZIP refits. `NULL` uses `gam` when `n < 50000` and `bam` otherwise.}
 
 \item{L}{Number of single effects in SuSiE. Default 10.}
 
-\item{coverage}{Credible set coverage level in SuSiE. Default 0.9.}
-
-\item{estimate_residual_variance}{Logical for SuSiE residual variance estimation. Default TRUE.}
-
-\item{residual_variance}{Initial or fixed residual variance. Default 0.5.}
-
-\item{residual_variance_lowerbound}{Lower bound when estimating residual variance.
-Default 0.1.}
-
-\item{residual_variance_upperbound}{Upper bound when estimating residual variance.
-If NULL, defaults to 1.}
-
-\item{prior_variance}{Prior variance supplied to SuSiE after the warm-up
-iterations. The warm-up value is fixed at 2. Default 1.}
-
-\item{estimate_prior_variance}{Logical. If TRUE, estimate the prior variance
-with SuSiE's `"optim"` method after `min.iter`; otherwise keep
-`prior_variance` fixed after `min.iter`.}
+\item{susie_para}{`NULL` or a named list of arguments for
+`susieR::susie_ss()`. Only parameters supplied by the user are overridden.
+Sufficient statistics `XtX`, `Xty`, `yty`, and `n` are constructed by
+SuSiEIRLS and cannot be supplied here. `L` remains a separate argument of
+`SuSiE_IRLS()`. With `NULL`, the current SuSiEIRLS
+defaults are used: residual-variance estimation starts at 0.5 with bounds
+0.1 and 1, scaled prior variance is 2 during warm-up and starts from 3
+afterward with the `"optim"` update, `max_iter = 30`, and
+`coverage = 0.9`. Other parameters use the native `susie_ss()` defaults.}
 
 \item{max.iter}{Maximum outer iterations. Default 15.}
 
 \item{max.eps}{Convergence threshold on max parameter change. Default 1e-5.}
 
 \item{min.iter}{Minimum iterations before convergence checks and prior
-variance updates. Default 3.}
+variance updates. Default 2.}
 
-\item{weight_cutoff}{Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.005.}
-
-\item{susie.iter}{Maximum iterations for each SuSiE fit. Default 30.}
-
-\item{ridge}{Diagonal ridge added to the Cox information matrix for positive
-definiteness. Used only in the Cox path. Default 1e-6.}
-
-\item{zip_theta}{Optional raw two-parameter `theta` vector passed to
-`mgcv::ziP(theta = )` when `family = "zip"`. If NULL, mgcv estimates it.}
-
-\item{zip_b}{Non-negative `b` parameter passed to `mgcv::ziP()` when
-`family = "zip"`. Default 0.}
-
-\item{zip_info}{Curvature used by the `mgcv::ziP()` local quadratic.
-`"expected"` uses Fisher information; `"observed"` uses the
-observed Hessian.}
+\item{weight_cutoff}{Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.0025.}
 
 \item{L.init}{Number of SNPs used in the initial low-dimensional warm start.
 Default 1.}
-
-\item{init_cor_method}{Deprecated and ignored. The greedy warm start now
-ranks variables by `abs(crossprod(X, residual))`.}
 
 \item{refit_noncs}{Logical. If TRUE, add a one-dimensional non-CS residual
 summary variable to the refit model when the current credible-set summary
@@ -117,9 +78,9 @@ is used only to improve the next linear predictor estimate and is not
 reported as a credible set. Default TRUE.}
 
 \item{noncs_var}{Minimum non-CS variance fraction required to add the
-non-CS residual summary variable. For example, `noncs_var = 0.2`
-adds it when the CS summary explains less than 80% of the posterior mean
-linear predictor variance. Default 0.2.}
+non-CS residual summary variable. For example, `noncs_var = 0.1`
+adds it when the CS summary explains less than 90% of the posterior mean
+linear predictor variance. Default 0.1.}
 
 \item{noncs_max_abs_cor}{Maximum allowed absolute correlation between a
 non-CS term and applicable existing refit covariates, including `Z` and
@@ -138,8 +99,6 @@ crossproducts. Larger values can be faster for small-to-moderate p when
 memory is sufficient. Default 10000.}
 
 \item{verbose}{Logical flag for progress printing. Default TRUE.}
-
-\item{...}{Additional arguments passed to the SuSiE fitting routine.}
 }
 \value{
 A list containing the main-effect SuSiE fit, final joint model,

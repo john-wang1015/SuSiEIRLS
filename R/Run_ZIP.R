@@ -38,9 +38,7 @@
   as.numeric(theta)
 }
 
-.zip_extract_working <- function(fit, weight_cutoff = 0.005,
-                                 zip_info = c("expected", "observed")) {
-  zip_info <- match.arg(zip_info)
+.zip_extract_working <- function(fit, weight_cutoff = 0.0025) {
   family <- fit$family
   .zip_validate_family(family)
 
@@ -55,13 +53,12 @@
 
   score <- -0.5 * as.numeric(dd$Dmu)
   h_obs <- 0.5 * as.numeric(dd$Dmu2)
-  h_exp <- 0.5 * as.numeric(dd$EDmu2)
-  h <- if (identical(zip_info, "expected")) h_exp else h_obs
 
-  bad <- !is.finite(gamma) | !is.finite(score) | !is.finite(h) | h <= 0
+  bad <- !is.finite(gamma) | !is.finite(score) |
+    !is.finite(h_obs) | h_obs <= 0
   if (mean(bad) > 0.9) stop("Too many invalid ziP working observations.")
-  h[bad] <- NA_real_
-  W_diag <- robust_weight(h, cutoff = weight_cutoff)
+  h_obs[bad] <- NA_real_
+  W_diag <- robust_weight(h_obs, cutoff = weight_cutoff)
 
   pseudo_response <- numeric(length(gamma))
   good <- is.finite(gamma) & is.finite(score) & is.finite(W_diag) & W_diag > 0
@@ -89,38 +86,23 @@
 #' Zero-inflated Poisson IRLS-SuSiE path
 #' @inheritParams SuSiE_IRLS
 #' @param family An `mgcv::ziP()` family object.
-#' @param zip_info Curvature used for the local quadratic. `"expected"`
-#'   uses the Fisher information returned by `mgcv::ziP()`; `"observed"`
-#'   uses the observed Hessian.
 #' @importFrom mgcv gam bam ziP
 #' @keywords internal
 #' @noRd
-Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
+Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
                     family = mgcv::ziP(),
                     mgcv_model = NULL,
-                    zip_info = c("expected", "observed"),
-                    L, max.iter, min.iter, max.eps, susie.iter,
-                    verbose = TRUE, n_threads = 1, coverage = 0.9,
-                    estimate_residual_variance = TRUE,
-                    residual_variance = 0.5, prior_variance = 1,
-                    estimate_prior_variance = TRUE,
-                    residual_variance_lowerbound = 0.1,
-                    residual_variance_upperbound = 1,
+                    L, max.iter, min.iter, max.eps, susie_para,
+                    verbose = TRUE, n_threads = 1,
                     L.init = 1,
-                    init_cor_method = NULL,
                     refit_noncs = TRUE,
-                    noncs_var = 0.2,
+                    noncs_var = 0.1,
                     noncs_max_abs_cor = 0.9,
-                    suff_block_size = 10000L, ...) {
+                    suff_block_size = 10000L) {
 
   run_start <- proc.time()[["elapsed"]]
   n <- NROW(y)
   p <- ncol(X)
-  estimate_prior_variance <- .validate_estimate_prior_variance(
-    estimate_prior_variance
-  )
-  prior_variance <- .validate_prior_variance(prior_variance)
-  zip_info <- match.arg(zip_info)
   suff_block_size <- validate_suff_block_size(suff_block_size)
   .zip_validate_family(family)
   response_info <- .zip_prepare_response(y)
@@ -139,8 +121,7 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
 
   fit_final <- .mgcv_greedy_warm_start(
     X = X, response_info = response_info, Z = Z, family = family,
-    L.init = L.init, init_cor_method = init_cor_method,
-    mgcv_model = mgcv_model
+    L.init = L.init, mgcv_model = mgcv_model
   )
 
   alpha <- clean_coef(stats::coef(fit_final)[seq_len(ncol(ZI))])
@@ -158,9 +139,7 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     beta_prev <- beta
     alpha_prev <- alpha
 
-    work <- .zip_extract_working(
-      fit_final, weight_cutoff = weight_cutoff, zip_info = zip_info
-    )
+    work <- .zip_extract_working(fit_final, weight_cutoff = weight_cutoff)
     suff <- weighted_residual_suffstats(
       X = X,
       y = work$pseudo_response,
@@ -170,22 +149,14 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
       block_size = suff_block_size
     )
 
-    updateV <- if (iter <= min.iter) 2 else 3
-    V_main[iter] <- updateV
-    fitX <- susieR::susie_ss(
-      XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
-      n = max(n / 2, work$n_eff), L = L,
-      scaled_prior_variance = updateV,
-      estimate_prior_variance = iter > min.iter &&
-        isTRUE(estimate_prior_variance),
-      estimate_residual_variance = estimate_residual_variance,
-      residual_variance = residual_variance,
-      residual_variance_lowerbound = residual_variance_lowerbound,
-      residual_variance_upperbound = residual_variance_upperbound,
-      max_iter = susie.iter,
-      estimate_prior_method = "optim",
-      coverage = coverage, ...
+    ss_args <- .susie_iteration_args(
+      susie_para,
+      list(XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
+           n = max(n / 2, work$n_eff), L = L),
+      iter, min.iter
     )
+    V_main <- .record_prior_variance(V_main, ss_args$scaled_prior_variance)
+    fitX <- do.call(susieR::susie_ss, ss_args)
     rm(suff)
 
     beta <- clean_coef(stats::coef(fitX)[-1L])
@@ -303,7 +274,6 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.005,
     n_eff = if (!is.null(work)) work$n_eff else NA_real_,
     theta = .zip_theta(fit_final, transformed = TRUE),
     theta_raw = .zip_theta(fit_final, transformed = FALSE),
-    zip_info = zip_info,
     prior_variance_main = V_main
   )
 }

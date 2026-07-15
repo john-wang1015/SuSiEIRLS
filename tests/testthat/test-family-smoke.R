@@ -4,9 +4,21 @@ standardize_matrix <- function(X) {
   X
 }
 
+test_that("public inputs keep package and external-package controls separate", {
+  public <- names(formals(SuSiE_IRLS))
+
+  expect_false(any(c(
+    "zip_theta", "zip_b", "zip_info", "ridge", "init_cor_method"
+  ) %in% public))
+  expect_true(all(c(
+    "L.init", "refit_noncs", "noncs_var", "noncs_max_abs_cor"
+  ) %in% public))
+})
+
 smoke_args <- function() {
   list(
-    L = 2, max.iter = 1, min.iter = 1, susie.iter = 20,
+    L = 2, max.iter = 1, min.iter = 1,
+    susie_para = list(max_iter = 20),
     n_threads = 1, verbose = FALSE, scale_data = FALSE,
     noncs_max_abs_cor = 0.9
   )
@@ -65,7 +77,7 @@ test_that("ZIP non-CS runner completes a real smoke fit", {
   y[rbinom(n, 1L, 0.3) == 1L] <- 0L
 
   fit <- do.call(SuSiE_IRLS, c(
-    list(X = X, Z = Z, y = y, family = "zip"), smoke_args()
+    list(X = X, Z = Z, y = y, family = mgcv::ziP()), smoke_args()
   ))
   expect_s3_class(fit$fitX, "susie")
 })

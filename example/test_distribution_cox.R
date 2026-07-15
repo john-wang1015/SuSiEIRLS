@@ -22,15 +22,9 @@ Ttrue <- -log(stats::runif(n)) / (0.10 * exp(eta))
 Ctime <- stats::rexp(n, rate = 0.08)
 y <- survival::Surv(pmin(Ttrue, Ctime), as.integer(Ttrue <= Ctime))
 
-fit <- SuSiEIRLS::SuSiE_IRLS(
-  X = X, Z = Z, y = y,
-  L = 2L, L.init = 1L,
-  max.iter = 3L, min.iter = 1L, max.eps = 1e-3,
-  susie.iter = 80L,
-  n_threads = 1L,
-  verbose = FALSE,
-  scale_data = FALSE
-)
+fit <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, L = 2L, L.init = 1L,
+           max.iter = 3L, min.iter = 1L, max.eps = 0.001, n_threads = 1L,
+           scale_data = FALSE, susie_para = list(max_iter = 80L, verbose = FALSE))
 
 pip <- fit$fitX$pip[seq_len(p)]
 if (length(pip) != p || any(!is.finite(pip))) stop("cox smoke test failed")

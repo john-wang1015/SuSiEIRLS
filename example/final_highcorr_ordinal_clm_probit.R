@@ -252,19 +252,19 @@ for (cutoff_name in names(cutoff_probs)) {
             }
 
             eta <- etaX + etaZ + etaI
-            vare <- 1
-            pve_main <- stats::var(etaX) / (stats::var(eta) + vare)
-            pve_z <- stats::var(etaZ) / (stats::var(eta) + vare)
-            pve_int <- stats::var(etaI) / (stats::var(eta) + vare)
-            pve_total <- stats::var(eta) / (stats::var(eta) + vare)
+            var_eta <- stats::var(eta)
+            vare <- 1 - var_eta
+            if (!is.finite(vare) || vare <= 0) stop("1 - var(eta) must be positive in ordinal simulation.")
+            etaZ_out <- etaZ / sqrt(vare)
+            latent_total <- var_eta + vare
+            pve_main <- stats::var(etaX) / latent_total
+            pve_z <- stats::var(etaZ) / latent_total
+            pve_int <- stats::var(etaI) / latent_total
+            pve_total <- var_eta / latent_total
 
-            cuts <- vapply(target_cum, function(pr0) {
-              stats::uniroot(
-                function(a0) mean(stats::pnorm(a0 - eta)) - pr0,
-                interval = c(-50, 50)
-              )$root
-            }, numeric(1))
-            y_lat <- eta + stats::rnorm(n)
+            cuts <- stats::qnorm(target_cum)
+            eps <- as.numeric(scale(stats::rnorm(n))) * sqrt(vare)
+            y_lat <- eta + eps
             y_int <- findInterval(y_lat, c(-Inf, cuts, Inf))
             y <- ordered(y_int, levels = 1:4)
             ct <- tabulate(y_int, nbins = 4L)
@@ -372,21 +372,12 @@ for (cutoff_name in names(cutoff_probs)) {
 
             stage <- "irls"
             t1 <- proc.time()[["elapsed"]]
-            fit_irls <- SuSiEIRLS::SuSiE_IRLS(
-              X = X, Z = Z, y = y,
-              family = "clm_probit",
-              L = L, L.init = 1L,
-              max.iter = irls_max_iter, min.iter = 2L, max.eps = fit_tol,
-              susie.iter = 300L,
-              coverage = coverage,
-              n_threads = irls_threads,
-              scale_data = FALSE,
-              estimate_residual_variance = TRUE,
-              residual_variance = 0.5,
-              residual_variance_lowerbound = 0.1,
-              residual_variance_upperbound = 1,
-              verbose = FALSE
-            )
+            fit_irls <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, family = "clm_probit",
+                            L = L, L.init = 1L, max.iter = irls_max_iter, min.iter = 2L,
+                            max.eps = fit_tol, n_threads = irls_threads, scale_data = FALSE,
+                            susie_para = list(max_iter = 300L, coverage = coverage, estimate_residual_variance = TRUE,
+                                residual_variance = 0.5, residual_variance_lowerbound = 0.1,
+                                residual_variance_upperbound = 1, verbose = FALSE))
             pip <- fit_irls$fitX$pip[seq_len(p)]
             evals <- eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage)
             evals$iter <- fit_irls$diagnostics$iterations
@@ -401,19 +392,11 @@ for (cutoff_name in names(cutoff_probs)) {
 
             stage <- "irls_fixed"
             t1 <- proc.time()[["elapsed"]]
-            fit_irls <- SuSiEIRLS::SuSiE_IRLS(
-              X = X, Z = Z, y = y,
-              family = "clm_probit",
-              L = L, L.init = 1L,
-              max.iter = irls_max_iter, min.iter = 2L, max.eps = fit_tol,
-              susie.iter = 300L,
-              coverage = coverage,
-              n_threads = irls_threads,
-              scale_data = FALSE,
-              estimate_residual_variance = FALSE,
-              residual_variance = 1,
-              verbose = FALSE
-            )
+            fit_irls <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, family = "clm_probit",
+                            L = L, L.init = 1L, max.iter = irls_max_iter, min.iter = 2L,
+                            max.eps = fit_tol, n_threads = irls_threads, scale_data = FALSE,
+                            susie_para = list(max_iter = 300L, coverage = coverage, estimate_residual_variance = FALSE,
+                                residual_variance = 1, verbose = FALSE))
             pip <- fit_irls$fitX$pip[seq_len(p)]
             evals <- eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage)
             evals$iter <- fit_irls$diagnostics$iterations
@@ -429,8 +412,8 @@ for (cutoff_name in names(cutoff_probs)) {
             stage <- "ibss_oracle"
             t1 <- proc.time()[["elapsed"]]
             y_ibss <- y
-            attr(y_ibss, "hat_etaZ") <- etaZ
-            attr(y_ibss, "clm_alpha") <- cuts
+            attr(y_ibss, "hat_etaZ") <- etaZ_out
+            attr(y_ibss, "clm_alpha") <- cuts / sqrt(vare)
             fit_ibss <- logisticsusie::ibss_from_ser(
               X = X, y = y_ibss, L = L, tol = fit_tol, maxit = ibss_maxit,
               num_cores = 1,

@@ -13,10 +13,11 @@
 #' @param y Response vector, or a `survival::Surv` object for Cox PH.
 #' @param Z An n by q matrix or vector of covariates. If NULL, only an intercept is used.
 #' @param family A GLM or mgcv family object, such as
-#'   `binomial(link = "logit")` or `mgcv::nb(theta = NULL)`. The strings
-#'   `"negbin"`, `"zip"`, and `"ocat"` select their corresponding paths.
-#'   Cumulative-link models use `"clm_logit"`, `"clm_probit"`,
-#'   `"clm_cloglog"`, `"clm_loglog"`, or `"clm_cauchit"`. An
+#'   `binomial(link = "logit")`, `mgcv::nb(theta = NULL)`,
+#'   `mgcv::ziP(theta = NULL, b = 0)`, or `mgcv::ocat(R = 4)`. Parameters
+#'   belonging to an mgcv family are supplied directly to its constructor.
+#'   Cumulative-link models use names such as `"clm_logit"` or
+#'   `"clm_probit"`. An
 #'   `mgcv::ocat(R = )` family object is also accepted. This argument is ignored
 #'   when `y` is a `Surv` object.
 #' @param mgcv_model Either `NULL`, `"gam"`, or `"bam"` for ordinary GLM and
@@ -26,44 +27,29 @@
 #'   Default 1.
 #' @param max.iter Maximum outer iterations. Default 15.
 #' @param min.iter Minimum iterations before convergence checks and prior
-#'   variance updates. Default 3.
+#'   variance updates. Default 2.
 #' @param max.eps Convergence threshold on max parameter change. Default 1e-5.
-#' @param susie.iter Maximum iterations for each SuSiE fit. Default 30.
 #' @param verbose Logical flag for progress printing. Default TRUE.
 #' @param n_threads Integer number of threads for internal parallel blocks. Default 4.
-#' @param coverage Credible set coverage level in SuSiE. Default 0.9.
-#' @param estimate_residual_variance Logical for SuSiE residual variance estimation. Default TRUE.
-#' @param residual_variance Initial or fixed residual variance. Default 0.5.
-#' @param residual_variance_lowerbound Lower bound when estimating residual variance.
-#'   Default 0.1.
-#' @param residual_variance_upperbound Upper bound when estimating residual variance.
-#'   If NULL, defaults to 1.
-#' @param prior_variance Prior variance supplied to SuSiE after the warm-up
-#'   iterations. The warm-up value is fixed at 2. Default 1.
-#' @param estimate_prior_variance Logical. If TRUE, estimate the prior variance
-#'   with SuSiE's `"optim"` method after `min.iter`; otherwise keep
-#'   `prior_variance` fixed after `min.iter`.
-#' @param weight_cutoff Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.005.
-#' @param ridge Diagonal ridge added to the Cox information matrix for positive
-#'   definiteness. Used only in the Cox path. Default 1e-6.
-#' @param zip_theta Optional raw two-parameter `theta` vector passed to
-#'   `mgcv::ziP(theta = )` when `family = "zip"`. If NULL, mgcv estimates it.
-#' @param zip_b Non-negative `b` parameter passed to `mgcv::ziP()` when
-#'   `family = "zip"`. Default 0.
-#' @param zip_info Curvature used by the `mgcv::ziP()` local quadratic.
-#'   `"expected"` uses Fisher information; `"observed"` uses the
-#'   observed Hessian.
-#' @param init_cor_method Deprecated and ignored. The greedy warm start now
-#'   ranks variables by `abs(crossprod(X, residual))`.
+#' @param susie_para `NULL` or a named list of arguments for
+#'   `susieR::susie_ss()`. Only parameters supplied by the user are overridden.
+#'   Sufficient statistics `XtX`, `Xty`, `yty`, and `n` are constructed by
+#'   SuSiEIRLS and cannot be supplied here. `L` remains a separate argument of
+#'   `SuSiE_IRLS()`. With `NULL`, the current SuSiEIRLS
+#'   defaults are used: residual-variance estimation starts at 0.5 with bounds
+#'   0.1 and 1, scaled prior variance is 2 during warm-up and starts from 3
+#'   afterward with the `"optim"` update, `max_iter = 30`, and
+#'   `coverage = 0.9`. Other parameters use the native `susie_ss()` defaults.
+#' @param weight_cutoff Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.0025.
 #' @param refit_noncs Logical. If TRUE, add a one-dimensional non-CS residual
 #'   summary variable to the refit model when the current credible-set summary
 #'   leaves enough posterior mean variation outside the CS terms. This variable
 #'   is used only to improve the next linear predictor estimate and is not
 #'   reported as a credible set. Default TRUE.
 #' @param noncs_var Minimum non-CS variance fraction required to add the
-#'   non-CS residual summary variable. For example, `noncs_var = 0.2`
-#'   adds it when the CS summary explains less than 80% of the posterior mean
-#'   linear predictor variance. Default 0.2.
+#'   non-CS residual summary variable. For example, `noncs_var = 0.1`
+#'   adds it when the CS summary explains less than 90% of the posterior mean
+#'   linear predictor variance. Default 0.1.
 #' @param noncs_max_abs_cor Maximum allowed absolute correlation between a
 #'   non-CS term and applicable existing refit covariates, including `Z` and
 #'   credible-set summary variables. Correlations equal to or above the
@@ -77,8 +63,6 @@
 #' @param suff_block_size Row block size for weighted sufficient-statistic
 #'   crossproducts. Larger values can be faster for small-to-moderate p when
 #'   memory is sufficient. Default 10000.
-#' @param ... Additional arguments passed to the SuSiE fitting routine.
-#'
 #' @return A list containing the main-effect SuSiE fit, final joint model,
 #'   discovery and coefficient summaries, convergence information, and the
 #'   prior variance used at each outer iteration. `diagnostics` contains the
@@ -94,27 +78,17 @@
 SuSiE_IRLS <- function(X, Z = NULL, y,
                        family = binomial(link = "logit"),
                        mgcv_model = NULL,
-                       n_threads = 4, L = 10, coverage = 0.9,
-                       estimate_residual_variance = TRUE, residual_variance = 0.5,
-                       residual_variance_lowerbound = 0.1,
-                       residual_variance_upperbound = NULL,
-                       prior_variance = 1,
-                       estimate_prior_variance = TRUE,
+                       n_threads = 4, L = 10,
+                       susie_para = NULL,
                        max.iter = 15, max.eps = 1e-5, min.iter = 2,
-                       weight_cutoff = 0.005,
-                       susie.iter = 30,
-                       ridge = 1e-6,
-                       zip_theta = NULL,
-                       zip_b = 0,
-                       zip_info = c("expected", "observed"),
+                       weight_cutoff = 0.0025,
                        L.init = 1,
-                       init_cor_method = NULL,
                        refit_noncs = TRUE,
-                       noncs_var = 0.2,
+                       noncs_var = 0.1,
                        noncs_max_abs_cor = 0.9,
                        scale_data = TRUE,
                        suff_block_size = 10000L,
-                       verbose = TRUE, ...) {
+                       verbose = TRUE) {
 
   # ---- basic checks ----
   if (is.null(X)) stop("X must not be NULL.")
@@ -173,37 +147,23 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
   } else {
     NULL
   }
-  is_negbin_flag <- !is.null(family_string) &&
-    family_string %in% c("negbin", "nb", "negative.binomial")
-  is_zip_flag <- (!is.null(family_string) &&
-    family_string %in% c("zip", "zero.inflated.poisson",
-                         "zero_inflated_poisson", "zero inflated poisson",
-                         "zero-inflated-poisson", "zeroinflatedpoisson")) ||
-    .zip_is_family(family)
+  is_zip_flag <- .zip_is_family(family)
   clm_links <- c("logit", "probit", "cloglog", "loglog", "cauchit")
   clm_link <- NULL
   if (!is.null(family_string) && startsWith(family_string, "clm_")) {
     clm_link <- sub("^clm_", "", family_string)
     if (!clm_link %in% clm_links) {
-      stop("Unsupported CLM family. Use clm_logit, clm_probit, clm_cloglog, clm_loglog, or clm_cauchit.")
+      stop("Unsupported CLM link. Use clm_logit or clm_probit, for example.")
     }
   }
   if (identical(family_string, "clm")) {
-    stop("family = 'clm' is incomplete. Specify clm_logit, clm_probit, clm_cloglog, clm_loglog, or clm_cauchit.")
+    stop("family = 'clm' is incomplete. Use clm_logit or clm_probit, for example.")
   }
   is_clm_flag <- !is.null(clm_link)
-  is_ocat_flag <- (!is.null(family_string) &&
-    family_string %in% c("ocat", "ordinal", "ordered", "ordered.categorical",
-                         "ordered_categorical")) ||
-    .ocat_is_family(family)
+  is_ocat_flag <- .ocat_is_family(family)
   # Cox is identified by a Surv-typed response; family is then ignored.
   is_cox_flag <- inherits(y, "Surv")
-  estimate_prior_variance <- .validate_estimate_prior_variance(
-    estimate_prior_variance
-  )
-  prior_variance <- .validate_prior_variance(prior_variance)
-  zip_info <- match.arg(zip_info)
-  rv_upper_default <- if (is.null(residual_variance_upperbound)) 1 else residual_variance_upperbound
+  susie_para <- .resolve_susie_para(susie_para)
   suff_block_size <- validate_suff_block_size(suff_block_size)
 
   # ---- dispatch ----
@@ -218,104 +178,37 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         max.iter = max.iter,
         min.iter = min.iter,
         max.eps = max.eps,
-        susie.iter = susie.iter,
+        susie_para = susie_para,
         verbose = verbose,
         n_threads = n_threads,
-        coverage = coverage,
-        prior_variance = prior_variance,
-        estimate_prior_variance = estimate_prior_variance,
-        estimate_residual_variance = estimate_residual_variance,
-        residual_variance = residual_variance,
-        residual_variance_lowerbound = residual_variance_lowerbound,
-        residual_variance_upperbound = rv_upper_default,
-        ridge = ridge,
         L.init = L.init,
-        init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
         noncs_var = noncs_var,
         noncs_max_abs_cor = noncs_max_abs_cor,
-        suff_block_size = suff_block_size,
-        ...
-      )
-    )
-  }
-
-  if (is_negbin_flag) {
-    return(
-      Run_GLM(
-        X = X, y = y, Z = Z,
-        family = mgcv::nb(theta = NULL),
-        mgcv_model = mgcv_model,
-        L = L,
-        max.iter = max.iter,
-        min.iter = min.iter,
-        max.eps = max.eps,
-        susie.iter = susie.iter,
-        verbose = verbose,
-        n_threads = n_threads,
-        coverage = coverage,
-        weight_cutoff = weight_cutoff,
-        prior_variance = prior_variance,
-        estimate_prior_variance = estimate_prior_variance,
-        estimate_residual_variance = estimate_residual_variance,
-        residual_variance = residual_variance,
-        residual_variance_lowerbound = residual_variance_lowerbound,
-        residual_variance_upperbound = rv_upper_default,
-        L.init = L.init,
-        init_cor_method = init_cor_method,
-        refit_noncs = refit_noncs,
-        noncs_var = noncs_var,
-        noncs_max_abs_cor = noncs_max_abs_cor,
-        suff_block_size = suff_block_size,
-        ...
+        suff_block_size = suff_block_size
       )
     )
   }
 
   if (is_zip_flag) {
-    if (!is.null(zip_theta)) {
-      if (!is.numeric(zip_theta) || length(zip_theta) != 2L ||
-          any(!is.finite(zip_theta))) {
-        stop("zip_theta must be NULL or a finite numeric vector of length 2.")
-      }
-    }
-    if (!is.numeric(zip_b) || length(zip_b) != 1L ||
-        !is.finite(zip_b) || zip_b < 0) {
-      stop("zip_b must be a non-negative finite numeric scalar.")
-    }
-    zip_family <- if (is.character(family)) {
-      mgcv::ziP(theta = zip_theta, b = zip_b)
-    } else {
-      family
-    }
     return(
       Run_ZIP(
         X = X, y = y, Z = Z,
-        family = zip_family,
+        family = family,
         mgcv_model = mgcv_model,
-        zip_info = zip_info,
         L = L,
         max.iter = max.iter,
         min.iter = min.iter,
         max.eps = max.eps,
-        susie.iter = susie.iter,
+        susie_para = susie_para,
         verbose = verbose,
         n_threads = n_threads,
-        coverage = coverage,
         weight_cutoff = weight_cutoff,
-        prior_variance = prior_variance,
-        estimate_prior_variance = estimate_prior_variance,
-        estimate_residual_variance = estimate_residual_variance,
-        residual_variance = residual_variance,
-        residual_variance_lowerbound = residual_variance_lowerbound,
-        residual_variance_upperbound = rv_upper_default,
         L.init = L.init,
-        init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
         noncs_var = noncs_var,
         noncs_max_abs_cor = noncs_max_abs_cor,
-        suff_block_size = suff_block_size,
-        ...
+        suff_block_size = suff_block_size
       )
     )
   }
@@ -328,24 +221,14 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         max.iter = max.iter,
         min.iter = min.iter,
         max.eps = max.eps,
-        susie.iter = susie.iter,
+        susie_para = susie_para,
         verbose = verbose,
         n_threads = n_threads,
-        coverage = coverage,
-        prior_variance = prior_variance,
-        estimate_prior_variance = estimate_prior_variance,
-        estimate_residual_variance = estimate_residual_variance,
-        residual_variance = residual_variance,
-        residual_variance_lowerbound = residual_variance_lowerbound,
-        residual_variance_upperbound = rv_upper_default,
-        ridge = ridge,
         L.init = L.init,
-        init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
         noncs_var = noncs_var,
         noncs_max_abs_cor = noncs_max_abs_cor,
-        suff_block_size = suff_block_size,
-        ...
+        suff_block_size = suff_block_size
       )
     )
   }
@@ -358,30 +241,20 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         max.iter = max.iter,
         min.iter = min.iter,
         max.eps = max.eps,
-        susie.iter = susie.iter,
+        susie_para = susie_para,
         verbose = verbose,
         n_threads = n_threads,
-        coverage = coverage,
-        prior_variance = prior_variance,
-        estimate_prior_variance = estimate_prior_variance,
-        estimate_residual_variance = estimate_residual_variance,
-        residual_variance = residual_variance,
-        residual_variance_lowerbound = residual_variance_lowerbound,
-        residual_variance_upperbound = rv_upper_default,
-        ridge = ridge,
         L.init = L.init,
-        init_cor_method = init_cor_method,
         refit_noncs = refit_noncs,
         noncs_var = noncs_var,
         noncs_max_abs_cor = noncs_max_abs_cor,
-        suff_block_size = suff_block_size,
-        ...
+        suff_block_size = suff_block_size
       )
     )
   }
 
   if (is.character(family)) {
-    stop("Unsupported family string. Use negbin, zip, ocat, a clm_<link> family, or a GLM/mgcv family object.")
+    stop("Unsupported family string. Supply an mgcv family object directly, or use a clm_<link> family.")
   }
 
   # general GLM (e.g., Poisson, Gaussian with non-default link, etc.)
@@ -390,21 +263,13 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
       X = X, y = y, Z = Z, family = family,
       mgcv_model = mgcv_model,
       L = L, max.iter = max.iter, min.iter = min.iter, max.eps = max.eps,
-      susie.iter = susie.iter, verbose = verbose, n_threads = n_threads,
-      coverage = coverage, weight_cutoff = weight_cutoff,
-      prior_variance = prior_variance,
-      estimate_prior_variance = estimate_prior_variance,
-      estimate_residual_variance = estimate_residual_variance,
-      residual_variance = residual_variance,
-      residual_variance_lowerbound = residual_variance_lowerbound,
-      residual_variance_upperbound = rv_upper_default,
+      susie_para = susie_para, verbose = verbose, n_threads = n_threads,
+      weight_cutoff = weight_cutoff,
       L.init = L.init,
-      init_cor_method = init_cor_method,
       refit_noncs = refit_noncs,
       noncs_var = noncs_var,
       noncs_max_abs_cor = noncs_max_abs_cor,
-      suff_block_size = suff_block_size,
-      ...
+      suff_block_size = suff_block_size
     )
   )
 }

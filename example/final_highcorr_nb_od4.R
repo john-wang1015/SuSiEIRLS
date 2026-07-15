@@ -12,7 +12,7 @@ family_name <- "nb"
 setting <- "od4"
 out_structure <- setting
 od <- 4
-nb_mean <- 2.5
+nb_mean <- 2
 theta <- nb_mean / (od - 1)
 ns <- c(250L, 500L, 1000L)
 nrep <- 500L
@@ -122,17 +122,22 @@ for (n in ns) {
           }
 
           eta <- etaX + etaZ + etaI
-          vare <- od
-          pve_main <- stats::var(etaX) / (stats::var(eta) + vare)
-          pve_z <- stats::var(etaZ) / (stats::var(eta) + vare)
-          pve_int <- stats::var(etaI) / (stats::var(eta) + vare)
-          pve_total <- stats::var(eta) / (stats::var(eta) + vare)
+          var_eta <- stats::var(eta)
+          vare <- 1 - var_eta
+          if (!is.finite(vare) || vare <= 0) stop("1 - var(eta) must be positive in NB simulation.")
+          eta_out <- eta / sqrt(vare)
+          etaZ_out <- etaZ / sqrt(vare)
+          latent_total <- var_eta + vare
+          pve_main <- stats::var(etaX) / latent_total
+          pve_z <- stats::var(etaZ) / latent_total
+          pve_int <- stats::var(etaI) / latent_total
+          pve_total <- var_eta / latent_total
 
                     a <- stats::uniroot(
-            function(a0) mean(exp(clip_eta(a0 + eta))) - nb_mean,
+            function(a0) mean(exp(clip_eta(a0 + eta_out))) - nb_mean,
             interval = c(-50, 50)
           )$root
-          mu <- exp(clip_eta(a + eta))
+          mu <- exp(clip_eta(a + eta_out))
           mu_mean <- mean(mu)
           od_avg <- mean(1 + mu / theta)
           y <- stats::rnbinom(n, size = theta, mu = mu)
@@ -231,44 +236,29 @@ for (n in ns) {
 
           stage <- "irls"
           t1 <- proc.time()[["elapsed"]]
-          fit_irls <- SuSiEIRLS::SuSiE_IRLS(
-            X = X, Z = Z, y = y,
-            family = mgcv::nb(theta = NULL, link = "log"),
-            L = L, L.init = 1L,
-            max.iter = 8L, min.iter = 2L, max.eps = 1e-4,
-            susie.iter = 300L,
-            coverage = coverage,
-            n_threads = irls_threads,
-            estimate_residual_variance = TRUE,
-            residual_variance = 0.5,
-            residual_variance_lowerbound = 0.1,
-            residual_variance_upperbound = 1,
-            verbose = FALSE
-          )
+          fit_irls <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, family = mgcv::nb(theta = NULL,
+                          link = "log"), L = L, L.init = 1L, max.iter = 8L, min.iter = 2L,
+                          max.eps = 1e-04, n_threads = irls_threads, susie_para = list(max_iter = 300L,
+                              coverage = coverage, estimate_residual_variance = TRUE,
+                              residual_variance = 0.5, residual_variance_lowerbound = 0.1,
+                              residual_variance_upperbound = 1, verbose = FALSE))
           pip <- fit_irls$fitX$pip[seq_len(p)]
           add_common(eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage), "irls", proc.time()[["elapsed"]] - t1)
 
           stage <- "irls_fixed"
           t1 <- proc.time()[["elapsed"]]
-          fit_irls <- SuSiEIRLS::SuSiE_IRLS(
-            X = X, Z = Z, y = y,
-            family = mgcv::nb(theta = NULL, link = "log"),
-            L = L, L.init = 1L,
-            max.iter = 8L, min.iter = 2L, max.eps = 1e-4,
-            susie.iter = 300L,
-            coverage = coverage,
-            n_threads = irls_threads,
-            estimate_residual_variance = FALSE,
-            residual_variance = 1,
-            verbose = FALSE
-          )
+          fit_irls <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, family = mgcv::nb(theta = NULL,
+                          link = "log"), L = L, L.init = 1L, max.iter = 8L, min.iter = 2L,
+                          max.eps = 1e-04, n_threads = irls_threads, susie_para = list(max_iter = 300L,
+                              coverage = coverage, estimate_residual_variance = FALSE,
+                              residual_variance = 1, verbose = FALSE))
           pip <- fit_irls$fitX$pip[seq_len(p)]
           add_common(eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage), "irls_fixed_sigma2_1", proc.time()[["elapsed"]] - t1)
 
           stage <- "ibss_oracle"
           t1 <- proc.time()[["elapsed"]]
           y_ibss <- y
-          attr(y_ibss, "hat_etaZ") <- etaZ
+          attr(y_ibss, "hat_etaZ") <- etaZ_out
           attr(y_ibss, "theta") <- theta
           fit_ibss <- logisticsusie::ibss_from_ser(
             X = X, y = y_ibss, L = L, tol = 1e-4, maxit = 100,

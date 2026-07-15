@@ -135,17 +135,22 @@ for (zz in seq_along(target_zero_grid)) {
             }
 
             eta <- etaX + etaZ + etaI
-            vare <- NA_real_
-            pve_main <- NA_real_
-            pve_z <- NA_real_
-            pve_int <- NA_real_
-            pve_total <- NA_real_
+            var_eta <- stats::var(eta)
+            vare <- 1 - var_eta
+            if (!is.finite(vare) || vare <= 0) stop("1 - var(eta) must be positive in Tweedie simulation.")
+            eta_out <- eta / sqrt(vare)
+            etaZ_out <- etaZ / sqrt(vare)
+            latent_total <- var_eta + vare
+            pve_main <- stats::var(etaX) / latent_total
+            pve_z <- stats::var(etaZ) / latent_total
+            pve_int <- stats::var(etaI) / latent_total
+            pve_total <- var_eta / latent_total
 
             a <- stats::uniroot(
-              function(a0) mean(exp(clip_eta(a0 + eta))) - tw_mean,
+              function(a0) mean(exp(clip_eta(a0 + eta_out))) - tw_mean,
               interval = c(-50, 50)
             )$root
-            mu <- exp(clip_eta(a + eta))
+            mu <- exp(clip_eta(a + eta_out))
             tw_phi <- stats::uniroot(
               function(ph) {
                 mean(exp(-mu^(2 - tw_p) / (ph * (2 - tw_p)))) - target_zero
@@ -155,8 +160,6 @@ for (zz in seq_along(target_zero_grid)) {
             y <- mgcv::rTweedie(mu = mu, p = tw_p, phi = tw_phi)
             mu_mean <- mean(mu)
             observed_zero <- mean(y == 0)
-            pve_obs_total <- stats::var(mu) /
-              (stats::var(mu) + mean(tw_phi * mu^tw_p))
 
             add_common <- function(evals, method, time_sec) {
               evals$method <- method
@@ -180,7 +183,6 @@ for (zz in seq_along(target_zero_grid)) {
               evals$pve_z <- pve_z
               evals$pve_int <- pve_int
               evals$pve_total <- pve_total
-              evals$pve_obs_total <- pve_obs_total
               evals$var_eta <- stats::var(eta)
               evals$vare <- vare
               evals$tw_mean <- tw_mean
@@ -255,20 +257,12 @@ for (zz in seq_along(target_zero_grid)) {
 
             stage <- "irls"
             t1 <- proc.time()[["elapsed"]]
-            fit_irls <- SuSiEIRLS::SuSiE_IRLS(
-              X = X, Z = Z, y = y,
-              family = mgcv::tw(theta = NULL, link = "log"),
-              L = L, L.init = 1L,
-              max.iter = 8L, min.iter = 2L, max.eps = 1e-4,
-              susie.iter = 300L,
-              coverage = coverage,
-              n_threads = irls_threads,
-              estimate_residual_variance = TRUE,
-              residual_variance = 0.5,
-              residual_variance_lowerbound = 0.1,
-              residual_variance_upperbound = 1,
-              verbose = FALSE
-            )
+            fit_irls <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, family = mgcv::tw(theta = NULL,
+                            link = "log"), L = L, L.init = 1L, max.iter = 8L, min.iter = 2L,
+                            max.eps = 1e-04, n_threads = irls_threads, susie_para = list(max_iter = 300L,
+                                coverage = coverage, estimate_residual_variance = TRUE,
+                                residual_variance = 0.5, residual_variance_lowerbound = 0.1,
+                                residual_variance_upperbound = 1, verbose = FALSE))
             pip <- fit_irls$fitX$pip[seq_len(p)]
             evals <- eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage)
             evals$theta_hat <- if (!is.null(fit_irls$theta)) fit_irls$theta else NA_real_
@@ -276,18 +270,11 @@ for (zz in seq_along(target_zero_grid)) {
 
             stage <- "irls_fixed"
             t1 <- proc.time()[["elapsed"]]
-            fit_irls <- SuSiEIRLS::SuSiE_IRLS(
-              X = X, Z = Z, y = y,
-              family = mgcv::tw(theta = NULL, link = "log"),
-              L = L, L.init = 1L,
-              max.iter = 8L, min.iter = 2L, max.eps = 1e-4,
-              susie.iter = 300L,
-              coverage = coverage,
-              n_threads = irls_threads,
-              estimate_residual_variance = FALSE,
-              residual_variance = 1,
-              verbose = FALSE
-            )
+            fit_irls <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, family = mgcv::tw(theta = NULL,
+                            link = "log"), L = L, L.init = 1L, max.iter = 8L, min.iter = 2L,
+                            max.eps = 1e-04, n_threads = irls_threads, susie_para = list(max_iter = 300L,
+                                coverage = coverage, estimate_residual_variance = FALSE,
+                                residual_variance = 1, verbose = FALSE))
             pip <- fit_irls$fitX$pip[seq_len(p)]
             evals <- eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage)
             evals$theta_hat <- if (!is.null(fit_irls$theta)) fit_irls$theta else NA_real_
@@ -296,7 +283,7 @@ for (zz in seq_along(target_zero_grid)) {
             stage <- "ibss_oracle"
             t1 <- proc.time()[["elapsed"]]
             y_ibss <- y
-            attr(y_ibss, "hat_etaZ") <- etaZ
+            attr(y_ibss, "hat_etaZ") <- etaZ_out
             attr(y_ibss, "tw_p") <- tw_p
             attr(y_ibss, "tw_phi") <- tw_phi
             fit_ibss <- logisticsusie::ibss_from_ser(
@@ -357,12 +344,12 @@ result_df <- bind_rows_fill(rows)
 sim_cols <- c("family", "seed", "n", "setting", "structure", "case",
               "x_structure", "varX_ratio", "varX", "varZ", "true_signal",
               "true_cs", "n_true_cs", "pve_main",
-              "pve_z", "pve_int", "pve_total", "pve_obs_total",
+              "pve_z", "pve_int", "pve_total",
               "var_eta", "vare", "tw_mean", "mu_mean", "tw_p", "tw_phi",
               "target_zero", "observed_zero")
 sim_df <- unique(result_df[, sim_cols, drop = FALSE])
 result_drop <- c("pve_main", "pve_z", "pve_int", "pve_total",
-                 "pve_obs_total", "var_eta", "vare", "tw_mean",
+                 "var_eta", "vare", "tw_mean",
                  "mu_mean", "tw_p", "tw_phi", "target_zero",
                  "observed_zero")
 result_df <- result_df[, setdiff(names(result_df), result_drop), drop = FALSE]

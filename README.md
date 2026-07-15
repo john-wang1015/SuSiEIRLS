@@ -36,10 +36,16 @@ fit <- SuSiE_IRLS(X = X, Z = Z, y = y, L = 10)
 fit <- SuSiE_IRLS(X = X, Z = Z, y = y, family = poisson(), L = 10)
 
 ## Negative binomial (mgcv parameterisation)
-fit <- SuSiE_IRLS(X = X, Z = Z, y = y, family = "negbin", L = 10)
+fit <- SuSiE_IRLS(X = X, Z = Z, y = y,
+                  family = mgcv::nb(theta = NULL), L = 10)
+
+## Zero-inflated Poisson; ziP parameters belong in the family constructor
+fit <- SuSiE_IRLS(X = X, Z = Z, y = y,
+                  family = mgcv::ziP(theta = NULL, b = 0), L = 10)
 
 ## Ordered categorical cumulative-logit outcome
-fit <- SuSiE_IRLS(X = X, Z = Z, y = ordered_y, family = "ocat", L = 10)
+fit <- SuSiE_IRLS(X = X, Z = Z, y = ordered_y,
+                  family = mgcv::ocat(R = 4), L = 10)
 
 ## Cox proportional hazards
 library(survival)
@@ -55,10 +61,18 @@ fit <- SuSiE_IRLS(X = X, Z = Z, y = Surv(time, status), L = 10)
 | `Z` | `NULL` | $n \times q$ covariate matrix (projected out before SuSiE) |
 | `family` | `binomial(link = "logit")` | GLM or `mgcv` family; ignored when `y` is `Surv` |
 | `L` | 10 | Number of single effects |
-| `coverage` | 0.9 | Credible-set coverage |
+| `susie_para` | `NULL` | Named list of optional `susieR::susie_ss()` overrides |
 | `max.iter` | 15 | Maximum outer IRLS iterations |
-| `prior_variance` | 1 | Prior variance supplied after the warm-up iterations |
-| `estimate_prior_variance` | `TRUE` | Estimate prior variance with `optim` after `min.iter` |
+
+For example, use
+`susie_para = list(estimate_residual_variance = FALSE, coverage = 0.95)`.
+The sufficient statistics (`XtX`, `Xty`, `yty`, and `n`) and `L` are managed by
+SuSiEIRLS and cannot be overridden through this list. Parameters omitted from
+`susie_para` retain the current SuSiEIRLS settings when the package already has
+one; otherwise they use the native `susieR::susie_ss()` default. The existing
+scaled-prior schedule is retained: 2 during the warm-up iterations and 3 as the
+starting value afterward, when `estimate_prior_variance = TRUE` enables the
+`"optim"` update.
 
 ### Output
 

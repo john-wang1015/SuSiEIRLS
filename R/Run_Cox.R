@@ -4,28 +4,18 @@
 #' @keywords internal
 #' @noRd
 Run_Cox <- function(X, y, status, Z = NULL,
-                    L, max.iter, min.iter, max.eps, susie.iter,
-                    verbose = TRUE, n_threads = 1, coverage = 0.9,
-                    estimate_residual_variance = TRUE, prior_variance = 1,
-                    estimate_prior_variance = TRUE,
-                    residual_variance = 0.5,
-                    residual_variance_lowerbound = 0.1,
-                    residual_variance_upperbound = 1,
+                    L, max.iter, min.iter, max.eps, susie_para,
+                    verbose = TRUE, n_threads = 1,
                     ridge = 1e-6,
                     L.init = 1,
-                    init_cor_method = NULL,
                     refit_noncs = TRUE,
-                    noncs_var = 0.2,
+                    noncs_var = 0.1,
                     noncs_max_abs_cor = 0.9,
-                    suff_block_size = 10000L, ...) {
+                    suff_block_size = 10000L) {
 
   run_start <- proc.time()[["elapsed"]]
   n = length(y)
   p = ncol(X)
-  estimate_prior_variance <- .validate_estimate_prior_variance(
-    estimate_prior_variance
-  )
-  prior_variance <- .validate_prior_variance(prior_variance)
   suff_block_size <- validate_suff_block_size(suff_block_size)
 
   # ============================================
@@ -56,8 +46,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
   # Greedy low-dimensional Cox warm start
   # ============================================
   fit_final = greedy_cox_warm_start(
-    X = X, y = y, status = status, Z = Z, L.init = L.init,
-    init_cor_method = init_cor_method
+    X = X, y = y, status = status, Z = Z, L.init = L.init
   )
   if (ncol(Z) == 0) {
     alpha = numeric(0)
@@ -138,21 +127,13 @@ Run_Cox <- function(X, y, status, Z = NULL,
     diag(XtX) = diag(XtX) + ridge
 
     # Run SuSiE-SS on the Cox score sufficient statistics.
-    updateV <- if (iter <= min.iter) 2 else 3
-    V_main[iter] <- updateV
-    fitX <- susieR::susie_ss(
-      XtX = XtX, Xty = Xty, yty = n - 1, n = n, L = L,
-      residual_variance = residual_variance,
-      scaled_prior_variance = updateV,
-      estimate_prior_variance = iter > min.iter &&
-        isTRUE(estimate_prior_variance),
-      estimate_residual_variance = estimate_residual_variance,
-      residual_variance_lowerbound = residual_variance_lowerbound,
-      residual_variance_upperbound = residual_variance_upperbound,
-      max_iter = susie.iter,
-      estimate_prior_method = "optim",
-      coverage = coverage, ...
+    ss_args <- .susie_iteration_args(
+      susie_para,
+      list(XtX = XtX, Xty = Xty, yty = n - 1, n = n, L = L),
+      iter, min.iter
     )
+    V_main <- .record_prior_variance(V_main, ss_args$scaled_prior_variance)
+    fitX <- do.call(susieR::susie_ss, ss_args)
 
     beta = clean_coef(coef(fitX)[-1])
 
