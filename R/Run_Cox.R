@@ -133,6 +133,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
   # ============================================
   # Main iteration loop
   # ============================================
+  fitX_no_cs_streak <- 0L
   for (iter in 1:max.iter) {
     beta_prev = beta
     alpha_prev = alpha
@@ -207,6 +208,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
     CSdt <- summary(fitX)$vars
     cs_indices <- unique(CSdt$cs[CSdt$cs > 0])
     cs_indices = sort(cs_indices)
+    fitX_no_cs_streak <- if (length(cs_indices)) 0L else fitX_no_cs_streak + 1L
 
     if (length(cs_indices) == 0) {
       noncs_res <- build_no_cs_noncs_refit_term(
@@ -285,6 +287,10 @@ Run_Cox <- function(X, y, status, Z = NULL,
           "beta nonzero:", which(beta != 0), "\n")
     }
 
+    if (fitX_no_cs_streak >= 3L) {
+      if (verbose) cat("No main credible set detected in 3 consecutive iterations; stopping.\n")
+      break
+    }
     if (err < max.eps && iter > min.iter) {
       if (verbose) cat("Converged!\n")
       break

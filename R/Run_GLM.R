@@ -260,6 +260,7 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
   fitX <- NULL
   XCS <- NULL
 
+  fitX_no_cs_streak <- 0L
   for (iter in seq_len(max.iter)) {
     beta_prev <- beta
     alpha_prev <- alpha
@@ -290,6 +291,7 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
     beta <- clean_coef(stats::coef(fitX)[-1])
     CSdt <- summary(fitX)$vars
     cs_indices <- sort(unique(CSdt$cs[CSdt$cs > 0]))
+    fitX_no_cs_streak <- if (length(cs_indices)) 0L else fitX_no_cs_streak + 1L
 
     rm(suff)
 
@@ -354,6 +356,10 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
                   iter, err, work$n_eff, theta_msg))
     }
 
+    if (fitX_no_cs_streak >= 3L) {
+      if (verbose) cat("No main credible set detected in 3 consecutive iterations; stopping.\n")
+      break
+    }
     if (err < max.eps && iter > min.iter) {
       if (verbose) cat("Converged!\n")
       break
