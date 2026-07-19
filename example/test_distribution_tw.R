@@ -33,6 +33,6 @@ fit <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, family = mgcv::tw(theta = NULL
 pip <- fit$fitX$pip[seq_len(p)]
 if (length(pip) != p || any(!is.finite(pip))) stop("Tweedie smoke test failed")
 print(data.frame(family = "tw", iter = fit$diagnostics$iterations,
-                 n_cs = nrow(fit$main_index),
+                 n_cs = nrow(fit$discovery_summary),
                  top_signal_pip = max(pip[true_idx]),
                  p_hat = fit$theta[1L]))

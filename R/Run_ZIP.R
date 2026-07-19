@@ -95,7 +95,6 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
                     L, max.iter, min.iter, max.eps, susie_para,
                     verbose = TRUE, n_threads = 1,
                     L.init = 1,
-                    refit_noncs = TRUE,
                     noncs_var = 0.1,
                     noncs_max_abs_cor = 0.9,
                     suff_block_size = 10000L) {
@@ -131,7 +130,6 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
   alpha_prev <- alpha * 0
   fitX <- NULL
   XCS <- NULL
-  early_no_cs <- FALSE
   work <- NULL
 
   for (iter in seq_len(max.iter)) {
@@ -151,7 +149,7 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
     ss_args <- .susie_iteration_args(
       susie_para,
       list(XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
-           n = max(0.9 * n, work$n_eff), L = L),
+           n = max(0.95 * n, work$n_eff), L = L),
       iter, min.iter
     )
     fitX <- do.call(susieR::susie_ss, ss_args)
@@ -162,33 +160,26 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
     cs_indices <- sort(unique(CSdt$cs[CSdt$cs > 0]))
 
     if (!length(cs_indices)) {
-      if (iter <= min.iter) {
-        noncs_res <- build_no_cs_noncs_refit_term(
-          X, fitX, cor_design = Z,
-          noncs_max_abs_cor = noncs_max_abs_cor
-        )
-        if (is.null(noncs_res)) {
-          early_no_cs <- TRUE
-          if (verbose) {
-            cat("No credible set detected; returning current no-CS fit.\n")
-          }
-          break
-        }
-        XCS <- matrix(noncs_res, ncol = 1)
-        colnames(XCS) <- "Main_CS_noncs"
-        XCS_refit <- XCS
-      } else {
-        early_no_cs <- TRUE
+      noncs_res <- build_no_cs_noncs_refit_term(
+        X, fitX, cor_design = Z,
+        noncs_max_abs_cor = noncs_max_abs_cor
+      )
+      if (is.null(noncs_res)) {
+        XCS <- NULL
+        XCS_refit <- NULL
         if (verbose) {
-          cat("No credible set detected; returning current no-CS fit.\n")
+          cat("No credible set detected; continuing the outer refit without an X term.\n")
         }
-        break
+      } else {
+        XCS <- matrix(noncs_res, ncol = 1)
+        colnames(XCS) <- "Main_noncs_res"
+        XCS_refit <- XCS
       }
     } else {
       Alpha_filtered <- fitX$alpha * 0
       for (i in cs_indices) {
         vars_in_cs_i <- CSdt$variable[CSdt$cs == i]
-        Alpha_filtered[i, vars_in_cs_i] <- fitX$alpha[i, vars_in_cs_i]
+        Alpha_filtered[i, vars_in_cs_i] <- fitX$alpha[i, vars_in_cs_i] / sum(fitX$alpha[i, vars_in_cs_i])
       }
       Alpha_filtered <- Alpha_filtered * sign(fitX$mu)
       XCS <- CppMatrix::matrixMultiply(X, as.matrix(Alpha_filtered), transB = TRUE)
@@ -197,23 +188,24 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
       colnames(XCS) <- paste0("Main_CS", cs_indices)
       XCS_refit <- XCS
 
-      if (isTRUE(refit_noncs)) {
-        noncs_term <- build_noncs_refit_term(
-          X = X, fitX = fitX, CSdt = CSdt, cs_indices = cs_indices,
-          XCS = XCS, noncs_var = noncs_var,
-          noncs_max_abs_cor = noncs_max_abs_cor, cor_design = Z
-        )
-        if (!is.null(noncs_term)) {
-          XCS_refit <- cbind(XCS_refit, Main_CS_noncs = noncs_term)
-        }
+      noncs_term <- build_noncs_refit_term(
+        X = X, fitX = fitX, CSdt = CSdt, cs_indices = cs_indices,
+        XCS = XCS, noncs_var = noncs_var,
+        noncs_max_abs_cor = noncs_max_abs_cor, cor_design = Z
+      )
+      if (!is.null(noncs_term)) {
+        XCS_refit <- cbind(XCS_refit, Main_noncs_res = noncs_term)
       }
     }
 
     pred <- .mgcv_predictor_data(Z, XCS_refit)
     Data <- cbind(response_info$data, pred)
-    fit_final <- .mgcv_fit_explicit(
-      response_info$response, colnames(pred), Data,
-      family, mgcv_model = mgcv_model
+    refit_dispersion <- .mgcv_refit_dispersion(fit_final)
+    penalty_names <- grep("^(Main_CS[0-9]+|Main_noncs_res)$", colnames(XCS_refit), value = TRUE)
+    penalty_V <- .refit_penalty_variance(fitX, cs_indices, penalty_names)
+    fit_final <- .mgcv_fit_fixed_ridge(
+      response_info$response, colnames(pred), Data, family, penalty_V,
+      dispersion = refit_dispersion, mgcv_model = mgcv_model
     )
 
 
@@ -236,12 +228,15 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
   }
 
   MainIndex <- if (is.null(fitX)) NULL else Identifying_MainEffect(fitX, colnames(X))
-  if (!is.null(XCS)) {
-    pred <- .mgcv_predictor_data(Z, XCS)
+  if (!is.null(XCS_refit)) {
+    refit_dispersion <- .mgcv_refit_dispersion(fit_final)
+    pred <- .mgcv_predictor_data(Z, XCS_refit)
     Data <- cbind(response_info$data, pred)
-    fit_final <- .mgcv_fit_explicit(
-      response_info$response, colnames(pred), Data,
-      family, mgcv_model = mgcv_model
+    penalty_names <- grep("^(Main_CS[0-9]+|Main_noncs_res)$", colnames(XCS_refit), value = TRUE)
+    penalty_V <- .refit_penalty_variance(fitX, cs_indices, penalty_names)
+    fit_final <- .mgcv_fit_fixed_ridge(
+      response_info$response, colnames(pred), Data, family, penalty_V,
+      dispersion = refit_dispersion, mgcv_model = mgcv_model
     )
   }
 
@@ -268,6 +263,6 @@ Run_ZIP <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
     ),
     fitX = fitX,
     fitJoint = fit_final,
-    main_index = MainIndex
+    discovery_summary = MainIndex
   )
 }

@@ -6,6 +6,6 @@
 \alias{SuSiEIRLS-package}
 \title{SuSiEIRLS: SuSiE for non-Gaussian outcomes via IRLS}
 \description{
-Implements SuSiE model for extended generalized linear models (EGLMs) using an Iteratively Reweighted Least Squares (IRLS) algorithm, and for Cox proportional-hazards survival outcomes via score-based sufficient statistics, and ordered-categorical outcomes via cumulative-logit score statistics. The package extends the Sum of Single Effects (SuSiE) framework to logistic, negative binomial, and other GLMs, as well as time-to-event data, fine-mapping non-Gaussian ordered, and censored outcomes within a unified iterative framework.
+Implements Sum of Single Effects (SuSiE) fine-mapping for generalized linear, ordered-categorical, and Cox proportional-hazards outcomes using IRLS or score-based sufficient statistics with penalized refitting.
 }
 \keyword{internal}

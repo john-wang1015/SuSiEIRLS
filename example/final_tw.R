@@ -254,7 +254,7 @@ for (zz in seq_along(target_zero_grid)) {
                                 residual_variance = 0.5, residual_variance_lowerbound = 0.1,
                                 residual_variance_upperbound = 1, verbose = FALSE))
             pip <- fit_irls$fitX$pip[seq_len(p)]
-            evals <- eval_cs_pip(fit_irls$main_index, pip, true_idx, p, coverage)
+            evals <- eval_cs_pip(fit_irls$discovery_summary, pip, true_idx, p, coverage)
             evals$theta_hat <- if (!is.null(fit_irls$theta)) fit_irls$theta else NA_real_
             add_common(evals, "irls", proc.time()[["elapsed"]] - t1)
 
@@ -266,7 +266,7 @@ for (zz in seq_along(target_zero_grid)) {
                                 coverage = coverage, estimate_residual_variance = FALSE,
                                 residual_variance = 1, verbose = FALSE))
             pip <- fit_irls$fitX$pip[seq_len(p)]
-            evals <- eval_cs_pip(fit_irls$main_index, pip, true_idx, p, coverage)
+            evals <- eval_cs_pip(fit_irls$discovery_summary, pip, true_idx, p, coverage)
             evals$theta_hat <- if (!is.null(fit_irls$theta)) fit_irls$theta else NA_real_
             add_common(evals, "irls_fixed_sigma2_1", proc.time()[["elapsed"]] - t1)
 

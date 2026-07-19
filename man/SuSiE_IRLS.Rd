@@ -18,7 +18,6 @@ SuSiE_IRLS(
   min.iter = 2,
   weight_cutoff = 0.0025,
   L.init = 1,
-  refit_noncs = TRUE,
   noncs_var = 0.1,
   noncs_max_abs_cor = 0.9,
   scale_data = TRUE,
@@ -33,14 +32,9 @@ SuSiE_IRLS(
 
 \item{y}{Response vector, or a `survival::Surv` object for Cox PH.}
 
-\item{family}{A GLM or mgcv family object, such as
-`binomial(link = "logit")`, `mgcv::nb(theta = NULL)`,
-`mgcv::ziP(theta = NULL, b = 0)`, or `mgcv::ocat(R = 4)`. Parameters
-belonging to an mgcv family are supplied directly to its constructor.
-Cumulative-link models use names such as `"clm_logit"` or
-`"clm_probit"`. An
-`mgcv::ocat(R = )` family object is also accepted. This argument is ignored
-when `y` is a `Surv` object.}
+\item{family}{A supported GLM/mgcv family or dispatch string. Ordered-logit
+models use fixed-ridge mgcv refits; explicitly non-logit cumulative links
+use `ordinal::clm()`. Ignored when `y` is a `Surv` object.}
 
 \item{mgcv_model}{Either `NULL`, `"gam"`, or `"bam"` for ordinary GLM and
 ZIP refits. `NULL` uses `gam` when `n < 50000` and `bam` otherwise.}
@@ -49,34 +43,27 @@ ZIP refits. `NULL` uses `gam` when `n < 50000` and `bam` otherwise.}
 
 \item{L}{Number of single effects in SuSiE. Default 10.}
 
-\item{susie_para}{`NULL` or a named list of arguments for
-`susieR::susie_ss()`. Only parameters supplied by the user are overridden.
-Sufficient statistics `XtX`, `Xty`, `yty`, and `n` are constructed by
-SuSiEIRLS and cannot be supplied here. `L` remains a separate argument of
-`SuSiE_IRLS()`. During `iter <= min.iter`, this list is ignored and the
-package warm-up defaults are used. Afterward, supplied values override the
-defaults: residual-variance estimation starts at 0.5 with bounds 0.1 and
-1.01, scaled prior variance starts at 2 with the `"optim"` update,
-`max_iter = 300`, and `coverage = 0.9`. Other parameters use the native
-`susie_ss()` defaults.}
+\item{susie_para}{Named `susieR::susie_ss()` options. Structural sufficient
+statistics and `L` are managed by SuSiEIRLS. The package field
+`prior_variance` is an absolute coefficient prior variance, fixed when
+`estimate_prior_variance = FALSE` and used as an estimate initializer when
+`TRUE`. The legacy `scaled_prior_variance` name is accepted with a warning
+and interpreted identically; the two names are mutually exclusive. Through
+`min.iter`, the prior-variance value and estimation switch are replaced by
+fixed `scaled_prior_variance = 2` and `estimate_prior_variance = FALSE`,
+while all other `susie_para` settings remain active.}
 
 \item{max.iter}{Maximum outer iterations. Default 10.}
 
 \item{max.eps}{Convergence threshold on max parameter change. Default 1e-5.}
 
-\item{min.iter}{Minimum iterations before convergence checks and prior
-variance updates. Default 2.}
+\item{min.iter}{Minimum outer iterations before convergence can be declared.
+Default 2.}
 
 \item{weight_cutoff}{Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.0025.}
 
-\item{L.init}{Number of SNPs used in the initial low-dimensional warm start.
+\item{L.init}{Number of predictors used in the low-dimensional fitting step.
 Default 1.}
-
-\item{refit_noncs}{Logical. If TRUE, add a one-dimensional non-CS residual
-summary variable to the refit model when the current credible-set summary
-leaves enough posterior mean variation outside the CS terms. This variable
-is used only to improve the next linear predictor estimate and is not
-reported as a credible set. Default TRUE.}
 
 \item{noncs_var}{Minimum non-CS variance fraction required to add the
 non-CS residual summary variable. For example, `noncs_var = 0.1`
@@ -103,7 +90,7 @@ memory is sufficient. Default 10000.}
 }
 \value{
 A list containing the main-effect SuSiE fit, final joint model, and
-  main-effect discovery table. `diagnostics` is a one-row data frame
+  `discovery_summary` table. `diagnostics` is a one-row data frame
   containing the number of outer iterations, final convergence eps, and
   runtime in seconds. The effective sample size used by the algorithm is
   stored in `fitJoint$n_eff`.
@@ -118,4 +105,11 @@ on covariate-adjusted data. At each outer iteration the algorithm:
 For survival outcomes, pass a `survival::Surv` object as `y`. The Cox path
 builds score-based sufficient statistics and runs SuSiE-SS without IRLS
 weights.
+Credible-set refit terms use their current absolute SuSiE prior variances as
+fixed Gaussian ridge penalties. A one-column aggregate non-CS term receives
+the largest positive finite current variance; an error is raised only when
+no positive finite SuSiE variance is available.
+Covariates in `Z` are not penalized. mgcv refits use the previous model dispersion to convert
+the absolute precision `1 / V` to the penalized-deviance scale; Cox refits
+use `survival::ridge(theta = 1 / V, scale = FALSE)`.
 }

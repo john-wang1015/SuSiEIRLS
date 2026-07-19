@@ -8,45 +8,41 @@
 #' For survival outcomes, pass a `survival::Surv` object as `y`. The Cox path
 #' builds score-based sufficient statistics and runs SuSiE-SS without IRLS
 #' weights.
+#' Credible-set refit terms use their current absolute SuSiE prior variances as
+#' fixed Gaussian ridge penalties. A one-column aggregate non-CS term receives
+#' the largest positive finite current variance; an error is raised only when
+#' no positive finite SuSiE variance is available.
+#' Covariates in `Z` are not penalized. mgcv refits use the previous model dispersion to convert
+#' the absolute precision `1 / V` to the penalized-deviance scale; Cox refits
+#' use `survival::ridge(theta = 1 / V, scale = FALSE)`.
 #'
 #' @param X An n by p numeric matrix of predictors.
 #' @param y Response vector, or a `survival::Surv` object for Cox PH.
 #' @param Z An n by q matrix or vector of covariates. If NULL, only an intercept is used.
-#' @param family A GLM or mgcv family object, such as
-#'   `binomial(link = "logit")`, `mgcv::nb(theta = NULL)`,
-#'   `mgcv::ziP(theta = NULL, b = 0)`, or `mgcv::ocat(R = 4)`. Parameters
-#'   belonging to an mgcv family are supplied directly to its constructor.
-#'   Cumulative-link models use names such as `"clm_logit"` or
-#'   `"clm_probit"`. An
-#'   `mgcv::ocat(R = )` family object is also accepted. This argument is ignored
-#'   when `y` is a `Surv` object.
+#' @param family A supported GLM/mgcv family or dispatch string. Ordered-logit
+#'   models use fixed-ridge mgcv refits; explicitly non-logit cumulative links
+#'   use `ordinal::clm()`. Ignored when `y` is a `Surv` object.
 #' @param mgcv_model Either `NULL`, `"gam"`, or `"bam"` for ordinary GLM and
 #'   ZIP refits. `NULL` uses `gam` when `n < 50000` and `bam` otherwise.
 #' @param L Number of single effects in SuSiE. Default 10.
-#' @param L.init Number of SNPs used in the initial low-dimensional warm start.
+#' @param L.init Number of predictors used in the low-dimensional fitting step.
 #'   Default 1.
 #' @param max.iter Maximum outer iterations. Default 10.
-#' @param min.iter Minimum iterations before convergence checks and prior
-#'   variance updates. Default 2.
+#' @param min.iter Minimum outer iterations before convergence can be declared.
+#'   Default 2.
 #' @param max.eps Convergence threshold on max parameter change. Default 1e-5.
 #' @param verbose Logical flag for progress printing. Default TRUE.
 #' @param n_threads Integer number of threads for internal parallel blocks. Default 4.
-#' @param susie_para `NULL` or a named list of arguments for
-#'   `susieR::susie_ss()`. Only parameters supplied by the user are overridden.
-#'   Sufficient statistics `XtX`, `Xty`, `yty`, and `n` are constructed by
-#'   SuSiEIRLS and cannot be supplied here. `L` remains a separate argument of
-#'   `SuSiE_IRLS()`. During `iter <= min.iter`, this list is ignored and the
-#'   package warm-up defaults are used. Afterward, supplied values override the
-#'   defaults: residual-variance estimation starts at 0.5 with bounds 0.1 and
-#'   1.01, scaled prior variance starts at 2 with the `"optim"` update,
-#'   `max_iter = 300`, and `coverage = 0.9`. Other parameters use the native
-#'   `susie_ss()` defaults.
+#' @param susie_para Named `susieR::susie_ss()` options. Structural sufficient
+#'   statistics and `L` are managed by SuSiEIRLS. The package field
+#'   `prior_variance` is an absolute coefficient prior variance, fixed when
+#'   `estimate_prior_variance = FALSE` and used as an estimate initializer when
+#'   `TRUE`. The legacy `scaled_prior_variance` name is accepted with a warning
+#'   and interpreted identically; the two names are mutually exclusive. Through
+#'   `min.iter`, the prior-variance value and estimation switch are replaced by
+#'   fixed `scaled_prior_variance = 2` and `estimate_prior_variance = FALSE`,
+#'   while all other `susie_para` settings remain active.
 #' @param weight_cutoff Quantile in (0, 0.05) to clip extreme IRLS weights. Default 0.0025.
-#' @param refit_noncs Logical. If TRUE, add a one-dimensional non-CS residual
-#'   summary variable to the refit model when the current credible-set summary
-#'   leaves enough posterior mean variation outside the CS terms. This variable
-#'   is used only to improve the next linear predictor estimate and is not
-#'   reported as a credible set. Default TRUE.
 #' @param noncs_var Minimum non-CS variance fraction required to add the
 #'   non-CS residual summary variable. For example, `noncs_var = 0.1`
 #'   adds it when the CS summary explains less than 90% of the posterior mean
@@ -65,16 +61,17 @@
 #'   crossproducts. Larger values can be faster for small-to-moderate p when
 #'   memory is sufficient. Default 10000.
 #' @return A list containing the main-effect SuSiE fit, final joint model, and
-#'   main-effect discovery table. `diagnostics` is a one-row data frame
+#'   `discovery_summary` table. `diagnostics` is a one-row data frame
 #'   containing the number of outer iterations, final convergence eps, and
 #'   runtime in seconds. The effective sample size used by the algorithm is
 #'   stored in `fitJoint$n_eff`.
 #'
-#' @importFrom stats var lm coef glm
+#' @importFrom stats var coef glm binomial quantile sd
+#' @importFrom graphics text
 #' @importFrom susieR susie_ss coef.susie
 #' @importFrom survival coxph Surv
 #' @importFrom CppMatrix matrixMultiply matrixVectorMultiply matrixCor
-#' @importFrom mgcv gam bam nb tw betar scat ziP
+#' @importFrom mgcv gam bam nb tw betar scat ziP ocat
 #' @importFrom ordinal clm
 #' @export
 SuSiE_IRLS <- function(X, Z = NULL, y,
@@ -85,7 +82,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
                        max.iter = 10, max.eps = 1e-5, min.iter = 2,
                        weight_cutoff = 0.0025,
                        L.init = 1,
-                       refit_noncs = TRUE,
                        noncs_var = 0.1,
                        noncs_max_abs_cor = 0.9,
                        scale_data = TRUE,
@@ -149,6 +145,10 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
   } else {
     NULL
   }
+  if (identical(family_string, "gaussian")) {
+    family <- stats::gaussian()
+    family_string <- NULL
+  }
   is_zip_flag <- .zip_is_family(family)
   clm_links <- c("logit", "probit", "cloglog", "loglog", "cauchit")
   clm_link <- NULL
@@ -161,8 +161,13 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
   if (identical(family_string, "clm")) {
     stop("family = 'clm' is incomplete. Use clm_logit or clm_probit, for example.")
   }
-  is_clm_flag <- !is.null(clm_link)
-  is_ocat_flag <- .ocat_is_family(family)
+  is_clm_flag <- !is.null(clm_link) && !identical(clm_link, "logit")
+  ordinal_strings <- c("ordinal", "ocat", "clm_logit")
+  ordered_default <- is.ordered(y) && nlevels(y) >= 3L &&
+    inherits(family, "family") && identical(family$family, "binomial")
+  is_ocat_flag <- .ocat_is_family(family) ||
+    (!is.null(family_string) && family_string %in% ordinal_strings) ||
+    ordered_default
   # Cox is identified by a Surv-typed response; family is then ignored.
   is_cox_flag <- inherits(y, "Surv")
   susie_para <- .resolve_susie_para(susie_para)
@@ -184,7 +189,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         verbose = verbose,
         n_threads = n_threads,
         L.init = L.init,
-        refit_noncs = refit_noncs,
         noncs_var = noncs_var,
         noncs_max_abs_cor = noncs_max_abs_cor,
         suff_block_size = suff_block_size
@@ -207,7 +211,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         n_threads = n_threads,
         weight_cutoff = weight_cutoff,
         L.init = L.init,
-        refit_noncs = refit_noncs,
         noncs_var = noncs_var,
         noncs_max_abs_cor = noncs_max_abs_cor,
         suff_block_size = suff_block_size
@@ -218,7 +221,7 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
   if (is_clm_flag) {
     return(
       Run_CLM(
-        X = X, y = y, Z = Z, family = NULL, clm_link = clm_link,
+        X = X, y = y, Z = Z, clm_link = clm_link,
         L = L,
         max.iter = max.iter,
         min.iter = min.iter,
@@ -227,7 +230,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         verbose = verbose,
         n_threads = n_threads,
         L.init = L.init,
-        refit_noncs = refit_noncs,
         noncs_var = noncs_var,
         noncs_max_abs_cor = noncs_max_abs_cor,
         suff_block_size = suff_block_size
@@ -236,9 +238,15 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
   }
 
   if (is_ocat_flag) {
+    ocat_family <- if (.ocat_is_family(family)) {
+      family
+    } else {
+      mgcv::ocat(R = .ocat_prepare_response(y)$ncat)
+    }
     return(
       Run_OCAT(
-        X = X, y = y, Z = Z, family = family, clm_link = "logit",
+        X = X, y = y, Z = Z, family = ocat_family,
+        weight_cutoff = weight_cutoff,
         L = L,
         max.iter = max.iter,
         min.iter = min.iter,
@@ -247,7 +255,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
         verbose = verbose,
         n_threads = n_threads,
         L.init = L.init,
-        refit_noncs = refit_noncs,
         noncs_var = noncs_var,
         noncs_max_abs_cor = noncs_max_abs_cor,
         suff_block_size = suff_block_size
@@ -256,7 +263,10 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
   }
 
   if (is.character(family)) {
-    stop("Unsupported family string. Supply an mgcv family object directly, or use a clm_<link> family.")
+    stop(
+      "Unsupported family string. Use 'ordinal', 'ocat', 'clm_logit', ",
+      "an explicit non-logit clm_<link>, or supply a family object."
+    )
   }
 
   # general GLM (e.g., Poisson, Gaussian with non-default link, etc.)
@@ -268,7 +278,6 @@ SuSiE_IRLS <- function(X, Z = NULL, y,
       susie_para = susie_para, verbose = verbose, n_threads = n_threads,
       weight_cutoff = weight_cutoff,
       L.init = L.init,
-      refit_noncs = refit_noncs,
       noncs_var = noncs_var,
       noncs_max_abs_cor = noncs_max_abs_cor,
       suff_block_size = suff_block_size

@@ -221,7 +221,7 @@ for (n in ns) {
                               residual_variance = 0.5, residual_variance_lowerbound = 0.1,
                               residual_variance_upperbound = 1, verbose = FALSE))
           pip <- fit_irls$fitX$pip[seq_len(p)]
-          add_common(eval_cs_pip(fit_irls$main_index, pip, true_idx, p, coverage), "irls", proc.time()[["elapsed"]] - t1)
+          add_common(eval_cs_pip(fit_irls$discovery_summary, pip, true_idx, p, coverage), "irls", proc.time()[["elapsed"]] - t1)
 
           stage <- "irls_fixed"
           t1 <- proc.time()[["elapsed"]]
@@ -230,7 +230,7 @@ for (n in ns) {
                           susie_para = list(max_iter = 300L, coverage = coverage, estimate_residual_variance = FALSE,
                               residual_variance = 1, verbose = FALSE))
           pip <- fit_irls$fitX$pip[seq_len(p)]
-          add_common(eval_cs_pip(fit_irls$main_index, pip, true_idx, p, coverage), "irls_fixed_sigma2_1", proc.time()[["elapsed"]] - t1)
+          add_common(eval_cs_pip(fit_irls$discovery_summary, pip, true_idx, p, coverage), "irls_fixed_sigma2_1", proc.time()[["elapsed"]] - t1)
 
           stage <- "ibss_oracle"
           t1 <- proc.time()[["elapsed"]]

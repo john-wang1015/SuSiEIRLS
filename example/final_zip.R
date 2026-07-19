@@ -289,7 +289,7 @@ for (n in ns) {
                             residual_variance_lowerbound = 0.1, residual_variance_upperbound = 1,
                             verbose = FALSE))
         pip <- fit_irls$fitX$pip[seq_len(p)]
-        evals <- eval_cs_pip(fit_irls$main_index, pip, true_idx, p, coverage)
+        evals <- eval_cs_pip(fit_irls$discovery_summary, pip, true_idx, p, coverage)
         evals$pip_true_mean <- mean(pip[true_idx])
         evals$pip_true_min <- min(pip[true_idx])
         evals$theta1_hat <- fit_irls$theta_raw[1]

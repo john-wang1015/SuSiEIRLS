@@ -29,5 +29,5 @@ fit <- SuSiEIRLS::SuSiE_IRLS(X = X, Z = Z, y = y, L = 2L, L.init = 1L,
 pip <- fit$fitX$pip[seq_len(p)]
 if (length(pip) != p || any(!is.finite(pip))) stop("cox smoke test failed")
 print(data.frame(family = "cox", iter = fit$diagnostics$iterations,
-                 n_cs = nrow(fit$main_index),
+                 n_cs = nrow(fit$discovery_summary),
                  top_signal_pip = max(pip[true_idx])))

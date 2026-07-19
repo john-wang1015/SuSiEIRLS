@@ -4,13 +4,10 @@ Title: SuSiE for non-Gaussian outcomes via IRLS
 Version: 0.1.0
 Author: Yihe Yang
 Maintainer: Yihe Yang <yxy1234@case.edu>
-Description: Implements SuSiE model for extended generalized linear models (EGLMs) 
-    using an Iteratively Reweighted Least Squares (IRLS) algorithm, and for Cox 
-    proportional-hazards survival outcomes via score-based sufficient statistics, and
-    ordered-categorical outcomes via cumulative-logit score statistics. The
-    package extends the Sum of Single Effects (SuSiE) framework to logistic, negative 
-    binomial, and other GLMs, as well as time-to-event data, fine-mapping non-Gaussian 
-    ordered, and censored outcomes within a unified iterative framework.
+Description: Implements Sum of Single Effects (SuSiE) fine-mapping for
+    generalized linear, ordered-categorical, and Cox proportional-hazards
+    outcomes using IRLS or score-based sufficient statistics with penalized
+    refitting.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true

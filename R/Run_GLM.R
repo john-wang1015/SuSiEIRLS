@@ -1,10 +1,10 @@
-.mgcv_backtick <- function(x) {
+.formula_backtick <- function(x) {
   paste0("`", gsub("`", "``", x, fixed = TRUE), "`")
 }
 
 .mgcv_explicit_formula <- function(response, rhs) {
   if (!length(rhs)) return(stats::as.formula(paste(response, "~ 1")))
-  stats::as.formula(paste(response, "~", paste(.mgcv_backtick(rhs), collapse = " + ")))
+  stats::as.formula(paste(response, "~", paste(.formula_backtick(rhs), collapse = " + ")))
 }
 
 .mgcv_validate_family <- function(family) {
@@ -222,7 +222,6 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
                     L, max.iter, min.iter, max.eps, susie_para,
                     verbose = TRUE, n_threads = 1,
                     L.init = 1,
-                    refit_noncs = TRUE,
                     noncs_var = 0.1,
                     noncs_max_abs_cor = 0.9,
                     suff_block_size = 10000L) {
@@ -232,6 +231,8 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
   p <- ncol(X)
   suff_block_size <- validate_suff_block_size(suff_block_size)
   .mgcv_validate_family(family)
+  is_gaussian <- identical(family$family, "gaussian") &&
+    identical(family$link, "identity")
   response_info <- .mgcv_prepare_response(y, family)
   if (response_info$n != nrow(X)) stop("Length(y) must equal nrow(X).")
 
@@ -258,7 +259,6 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
   alpha_prev <- alpha * 0
   fitX <- NULL
   XCS <- NULL
-  early_no_cs <- FALSE
 
   for (iter in seq_len(max.iter)) {
     beta_prev <- beta
@@ -269,53 +269,51 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
       X = X,
       y = work$pseudo_response,
       ZI = ZI,
-      weights = work$W_diag / work$phi0,
+      weights = if (is_gaussian) work$W_diag else work$W_diag / work$phi0,
       n_threads = n_threads,
       block_size = suff_block_size
     )
 
-    n_ss <- max(0.9 * n, work$n_eff)
+    n_ss <- max(0.95 * n, work$n_eff)
     ss_args <- .susie_iteration_args(
       susie_para,
       list(XtX = suff$XtX, Xty = suff$Xty, yty = suff$yty,
            n = n_ss, L = L),
       iter, min.iter
     )
+    if (is_gaussian) {
+      ss_args$estimate_residual_variance <- FALSE
+      ss_args$residual_variance <- work$phi0
+    }
     fitX <- do.call(susieR::susie_ss, ss_args)
-    rm(suff)
 
     beta <- clean_coef(stats::coef(fitX)[-1])
     CSdt <- summary(fitX)$vars
     cs_indices <- sort(unique(CSdt$cs[CSdt$cs > 0]))
 
+    rm(suff)
+
     if (!length(cs_indices)) {
-      if (iter <= min.iter) {
-        noncs_res <- build_no_cs_noncs_refit_term(
-          X, fitX, cor_design = Z,
-          noncs_max_abs_cor = noncs_max_abs_cor
-        )
-        if (is.null(noncs_res)) {
-          early_no_cs <- TRUE
-          if (verbose) {
-            cat("No credible set detected; returning current no-CS fit.\n")
-          }
-          break
-        }
-        XCS <- matrix(noncs_res, ncol = 1)
-        colnames(XCS) <- "Main_CS_noncs"
-        XCS_refit <- XCS
-      } else {
-        early_no_cs <- TRUE
+      noncs_res <- build_no_cs_noncs_refit_term(
+        X, fitX, cor_design = Z,
+        noncs_max_abs_cor = noncs_max_abs_cor
+      )
+      if (is.null(noncs_res)) {
+        XCS <- NULL
+        XCS_refit <- NULL
         if (verbose) {
-          cat("No credible set detected; returning current no-CS fit.\n")
+          cat("No credible set detected; continuing the outer refit without an X term.\n")
         }
-        break
+      } else {
+        XCS <- matrix(noncs_res, ncol = 1)
+        colnames(XCS) <- "Main_noncs_res"
+        XCS_refit <- XCS
       }
     } else {
       Alpha_filtered <- fitX$alpha * 0
       for (i in cs_indices) {
         vars_in_cs_i <- CSdt$variable[CSdt$cs == i]
-        Alpha_filtered[i, vars_in_cs_i] <- fitX$alpha[i, vars_in_cs_i]
+        Alpha_filtered[i, vars_in_cs_i] <- fitX$alpha[i, vars_in_cs_i] / sum(fitX$alpha[i, vars_in_cs_i])
       }
       Alpha_filtered <- Alpha_filtered * sign(fitX$mu)
       XCS <- CppMatrix::matrixMultiply(X, as.matrix(Alpha_filtered), transB = TRUE)
@@ -324,23 +322,23 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
       colnames(XCS) <- paste0("Main_CS", cs_indices)
       XCS_refit <- XCS
 
-      if (isTRUE(refit_noncs)) {
-        noncs_term <- build_noncs_refit_term(
-          X = X, fitX = fitX, CSdt = CSdt, cs_indices = cs_indices,
-          XCS = XCS, noncs_var = noncs_var,
-          noncs_max_abs_cor = noncs_max_abs_cor, cor_design = Z
-        )
-        if (!is.null(noncs_term)) {
-          XCS_refit <- cbind(XCS_refit, Main_CS_noncs = noncs_term)
-        }
+      noncs_term <- build_noncs_refit_term(
+        X = X, fitX = fitX, CSdt = CSdt, cs_indices = cs_indices,
+        XCS = XCS, noncs_var = noncs_var,
+        noncs_max_abs_cor = noncs_max_abs_cor, cor_design = Z
+      )
+      if (!is.null(noncs_term)) {
+        XCS_refit <- cbind(XCS_refit, Main_noncs_res = noncs_term)
       }
     }
 
     pred <- .mgcv_predictor_data(Z, XCS_refit)
     Data <- cbind(response_info$data, pred)
-    fit_final <- .mgcv_fit_explicit(
-      response_info$response, colnames(pred), Data, family,
-      mgcv_model = mgcv_model
+    penalty_names <- grep("^(Main_CS[0-9]+|Main_noncs_res)$", colnames(XCS_refit), value = TRUE)
+    penalty_V <- .refit_penalty_variance(fitX, cs_indices, penalty_names)
+    fit_final <- .mgcv_fit_fixed_ridge(
+      response_info$response, colnames(pred), Data, family, penalty_V,
+      dispersion = work$phi0, mgcv_model = mgcv_model
     )
 
     alpha <- clean_coef(stats::coef(fit_final)[seq_len(ncol(ZI))])
@@ -363,12 +361,15 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
   }
 
   MainIndex <- if (is.null(fitX)) NULL else Identifying_MainEffect(fitX, colnames(X))
-  if (!is.null(XCS)) {
-    pred <- .mgcv_predictor_data(Z, XCS)
+  if (!is.null(XCS_refit)) {
+    refit_dispersion <- .mgcv_refit_dispersion(fit_final)
+    pred <- .mgcv_predictor_data(Z, XCS_refit)
     Data <- cbind(response_info$data, pred)
-    fit_final <- .mgcv_fit_explicit(
-      response_info$response, colnames(pred), Data, family,
-      mgcv_model = mgcv_model
+    penalty_names <- grep("^(Main_CS[0-9]+|Main_noncs_res)$", colnames(XCS_refit), value = TRUE)
+    penalty_V <- .refit_penalty_variance(fitX, cs_indices, penalty_names)
+    fit_final <- .mgcv_fit_fixed_ridge(
+      response_info$response, colnames(pred), Data, family, penalty_V,
+      dispersion = refit_dispersion, mgcv_model = mgcv_model
     )
   }
 
@@ -395,6 +396,6 @@ Run_GLM <- function(X, y, Z = NULL, weight_cutoff = 0.0025,
     ),
     fitX = fitX,
     fitJoint = fit_final,
-    main_index = MainIndex
+    discovery_summary = MainIndex
   )
 }

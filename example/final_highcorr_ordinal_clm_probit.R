@@ -379,7 +379,7 @@ for (cutoff_name in names(cutoff_probs)) {
                                 residual_variance = 0.5, residual_variance_lowerbound = 0.1,
                                 residual_variance_upperbound = 1, verbose = FALSE))
             pip <- fit_irls$fitX$pip[seq_len(p)]
-            evals <- eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage)
+            evals <- eval_main_index_xcs(fit_irls$discovery_summary, pip, true_idx, x_cs_id, p, coverage)
             evals$iter <- fit_irls$diagnostics$iterations
             evals$converged <- fit_irls$diagnostics$eps < fit_tol
             evals$hit_maxit <- fit_irls$diagnostics$iterations >= irls_max_iter &&
@@ -398,7 +398,7 @@ for (cutoff_name in names(cutoff_probs)) {
                             susie_para = list(max_iter = 300L, coverage = coverage, estimate_residual_variance = FALSE,
                                 residual_variance = 1, verbose = FALSE))
             pip <- fit_irls$fitX$pip[seq_len(p)]
-            evals <- eval_main_index_xcs(fit_irls$main_index, pip, true_idx, x_cs_id, p, coverage)
+            evals <- eval_main_index_xcs(fit_irls$discovery_summary, pip, true_idx, x_cs_id, p, coverage)
             evals$iter <- fit_irls$diagnostics$iterations
             evals$converged <- fit_irls$diagnostics$eps < fit_tol
             evals$hit_maxit <- fit_irls$diagnostics$iterations >= irls_max_iter &&

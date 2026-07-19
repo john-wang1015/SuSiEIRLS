@@ -62,17 +62,17 @@ fit <- SuSiE_IRLS(X = X, Z = Z, y = Surv(time, status), L = 10)
 | `family` | `binomial(link = "logit")` | GLM or `mgcv` family; ignored when `y` is `Surv` |
 | `L` | 10 | Number of single effects |
 | `susie_para` | `NULL` | Named list of optional `susieR::susie_ss()` overrides |
-| `max.iter` | 15 | Maximum outer IRLS iterations |
+| `max.iter` | 10 | Maximum outer IRLS iterations |
 
 For example, use
 `susie_para = list(estimate_residual_variance = FALSE, coverage = 0.95)`.
 The sufficient statistics (`XtX`, `Xty`, `yty`, and `n`) and `L` are managed by
 SuSiEIRLS and cannot be overridden through this list. Parameters omitted from
 `susie_para` retain the current SuSiEIRLS settings when the package already has
-one; otherwise they use the native `susieR::susie_ss()` default. The existing
-scaled-prior schedule is retained: 2 during the warm-up iterations and 3 as the
-starting value afterward, when `estimate_prior_variance = TRUE` enables the
-`"optim"` update.
+one; otherwise they use the native `susieR::susie_ss()` default. Use
+`prior_variance` for an absolute coefficient prior variance. The legacy
+`scaled_prior_variance` name is accepted with a warning and interpreted the
+same way.
 
 ### Output
 
@@ -80,16 +80,14 @@ A list containing:
 
 - `fitX` — the SuSiE fit object from the final iteration.
 - `fitJoint` — the refitted GLM or Cox model with selected variables.
-- `main_index` — summary table of credible sets with PIPs and p-values.
-- `JointCoef` — coefficient table from the final joint model.
-- `converged` — logical convergence flag.
-- `iter` — number of outer iterations completed.
+- `discovery_summary` — discovered main effects with PIPs and p-values.
+- `diagnostics` — iterations, final convergence error, and runtime.
 
 ## Method overview
 
-**GLM / extended-GLM path.** The algorithm uses IRLS to linearise the GLM likelihood around the current estimate. At each outer iteration it forms a working response $z$ and diagonal weight matrix $W$, projects out covariates $Z$, and constructs weighted sufficient statistics $(X^\top W X,\; X^\top W z,\; z^\top W z)$ for `susie_ss()`. The residual variance is estimated within a bounded interval (default $[0.1, 1]$).
+**GLM / extended-GLM path.** The algorithm uses IRLS to linearise the GLM likelihood around the current estimate. At each outer iteration it forms a working response $z$ and diagonal weight matrix $W$, projects out covariates $Z$, and constructs weighted sufficient statistics $(X^\top W X,\; X^\top W z,\; z^\top W z)$ for `susie_ss()`. The residual variance is estimated within a bounded interval (default $[0.1, 1.01]$).
 
-**Ordered categorical path.** For ordered categorical outcomes, the package uses the cumulative-logit likelihood with flexible thresholds estimated by `ordinal::clm()`. It builds a local quadratic from the score and observed information for the location parameter, projects out both covariates and threshold nuisance parameters, and passes the resulting sufficient statistics to `susie_ss()`. The default SuSiE residual variance is initialized at 0.5 and estimated within $[0.1, 1]$.
+**Ordered categorical path.** For ordinal logit outcomes, the package uses `mgcv::ocat()`; explicit non-logit `clm_*` families use `ordinal::clm()`. It builds a local quadratic from the score and observed information for the location parameter, projects out covariates and threshold nuisance parameters, and passes the resulting sufficient statistics to `susie_ss()`. The default SuSiE residual variance is initialized at 0.5 and estimated within $[0.1, 1.01]$.
 
 **Cox path.** For survival outcomes, no working response exists. The package instead constructs score-based sufficient statistics $(X^\top M,\; A - B^\top B)$ from the Cox partial likelihood using a single-pass Breslow accumulator implemented in C++ (`cox_suffstat.cpp`). These replace $X^\top y$ and $X^\top X$ in the SuSiE-SS call.
 

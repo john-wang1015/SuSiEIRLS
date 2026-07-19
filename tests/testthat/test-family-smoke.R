@@ -6,7 +6,7 @@ standardize_matrix <- function(X) {
 
 expect_minimal_output <- function(fit) {
   expect_identical(
-    names(fit), c("diagnostics", "fitX", "fitJoint", "main_index")
+    names(fit), c("diagnostics", "fitX", "fitJoint", "discovery_summary")
   )
   expect_s3_class(fit$diagnostics, "data.frame")
   expect_equal(nrow(fit$diagnostics), 1)
@@ -21,10 +21,11 @@ test_that("public inputs keep package and external-package controls separate", {
   public <- names(formals(SuSiE_IRLS))
 
   expect_false(any(c(
-    "zip_theta", "zip_b", "zip_info", "ridge", "init_cor_method"
+    "zip_theta", "zip_b", "zip_info", "ridge", "init_cor_method",
+    "refit_noncs"
   ) %in% public))
   expect_true(all(c(
-    "L.init", "refit_noncs", "noncs_var", "noncs_max_abs_cor"
+    "L.init", "noncs_var", "noncs_max_abs_cor"
   ) %in% public))
 })
 
@@ -47,6 +48,28 @@ test_that("GLM non-CS runner completes a real smoke fit", {
   fit <- do.call(SuSiE_IRLS, c(list(X = X, Z = Z, y = y), smoke_args()))
   expect_s3_class(fit$fitX, "susie")
   expect_minimal_output(fit)
+})
+
+test_that("the gaussian string uses the GLM runner", {
+  set.seed(105)
+  n <- 80L
+  X <- standardize_matrix(matrix(rnorm(n * 6L), nrow = n))
+  Z <- standardize_matrix(matrix(rnorm(n), ncol = 1L))
+  y <- 0.5 * X[, 1L] + 0.2 * Z[, 1L] + rnorm(n)
+
+  fit <- do.call(SuSiE_IRLS, c(
+    list(X = X, Z = Z, y = y, family = "gaussian"), smoke_args()
+  ))
+  expect_s3_class(fit$fitJoint, "gam")
+  expect_minimal_output(fit)
+})
+
+test_that("OCAT and CLM are separate runners", {
+  expect_true(exists("Run_OCAT", mode = "function"))
+  expect_true(exists("Run_CLM", mode = "function"))
+  expect_false(identical(body(Run_OCAT), body(Run_CLM)))
+  expect_false("clm_link" %in% names(formals(Run_OCAT)))
+  expect_true("clm_link" %in% names(formals(Run_CLM)))
 })
 
 test_that("Cox non-CS runner completes a real smoke fit", {
@@ -79,6 +102,24 @@ test_that("ordinal non-CS runner completes a real smoke fit", {
     list(X = X, Z = Z, y = y, family = "clm_logit"), smoke_args()
   ))
   expect_s3_class(fit$fitX, "susie")
+  expect_s3_class(fit$fitJoint, "gam")
+  expect_minimal_output(fit)
+})
+
+test_that("non-logit ordinal input uses the CLM runner", {
+  skip_if_not_installed("ordinal")
+  set.seed(106)
+  n <- 90L
+  X <- standardize_matrix(matrix(rnorm(n * 6L), nrow = n))
+  Z <- standardize_matrix(matrix(rnorm(n), ncol = 1L))
+  latent <- 0.5 * X[, 1L] + 0.2 * Z[, 1L] + rnorm(n)
+  y <- ordered(cut(latent, breaks = c(-Inf, -0.5, 0.5, Inf), labels = FALSE))
+
+  fit <- do.call(SuSiE_IRLS, c(
+    list(X = X, Z = Z, y = y, family = "clm_probit"), smoke_args()
+  ))
+  expect_s3_class(fit$fitX, "susie")
+  expect_s3_class(fit$fitJoint, "clm")
   expect_minimal_output(fit)
 })
 

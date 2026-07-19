@@ -3,12 +3,84 @@
 #' @param status Event indicator for Cox proportional-hazards outcomes.
 #' @keywords internal
 #' @noRd
+.cox_fit_fixed_ridge <- function(y, status, Z, Xextra = NULL,
+                                 penalty_V = numeric(0)) {
+  dat <- data.frame(.time = as.numeric(y), .status = as.integer(status))
+  if (!is.null(Z) && ncol(as.matrix(Z)) > 0L) {
+    Z <- as.data.frame(Z)
+    dat <- cbind(dat, Z)
+  }
+  if (!is.null(Xextra) && ncol(as.matrix(Xextra)) > 0L) {
+    Xextra <- as.data.frame(Xextra)
+    dat <- cbind(dat, Xextra)
+  }
+
+  unpenalized_terms <- attr(penalty_V, "unpenalized_terms")
+  penalty_names <- names(penalty_V)
+  penalty_V <- as.numeric(penalty_V)
+  names(penalty_V) <- penalty_names
+  if (length(penalty_V) &&
+      (is.null(penalty_names) || any(!nzchar(penalty_names)) ||
+       any(!is.finite(penalty_V) | penalty_V <= 0))) {
+    stop("Cox penalty_V must be a named vector of positive finite variances.")
+  }
+  if (!all(penalty_names %in% names(dat))) {
+    stop("Every penalized Cox refit term must occur in the model data.")
+  }
+
+  ordinary <- setdiff(names(dat), c(".time", ".status", penalty_names))
+  rhs <- if (length(ordinary)) .formula_backtick(ordinary) else character(0)
+  if (length(penalty_names)) {
+    ridge_rhs <- vapply(seq_along(penalty_names), function(i) {
+      paste0(
+        "survival::ridge(", .formula_backtick(penalty_names[i]),
+        ", theta = ", format(1 / penalty_V[i], digits = 17, scientific = TRUE),
+        ", scale = FALSE)"
+      )
+    }, character(1))
+    rhs <- c(rhs, ridge_rhs)
+  }
+  rhs_text <- if (length(rhs)) paste(rhs, collapse = " + ") else "1"
+  form <- stats::as.formula(paste(
+    "survival::Surv(.time, .status) ~", rhs_text
+  ))
+  fit <- survival::coxph(form, data = dat, ties = "breslow")
+
+  if (length(penalty_names)) {
+    penalized <- utils::tail(
+      seq_along(stats::coef(fit)), length(penalty_names)
+    )
+    names(fit$coefficients)[penalized] <- penalty_names
+    attr(fit, "refit_penalty") <- list(
+      V = stats::setNames(penalty_V, penalty_names),
+      precision = stats::setNames(1 / penalty_V, penalty_names),
+      theta = stats::setNames(1 / penalty_V, penalty_names),
+      scale = FALSE,
+      unpenalized_terms = unpenalized_terms
+    )
+  } else if (length(unpenalized_terms)) {
+    attr(fit, "refit_penalty") <- list(
+      V = numeric(0), precision = numeric(0), theta = numeric(0),
+      scale = FALSE, unpenalized_terms = unpenalized_terms
+    )
+  }
+  fit
+}
+
+.cox_coef_table <- function(fit) {
+  G <- summary(fit)$coefficients
+  if (is.null(G) || is.null(dim(G))) return(NULL)
+  if ("exp(coef)" %in% colnames(G)) {
+    G <- G[, colnames(G) != "exp(coef)", drop = FALSE]
+  }
+  G
+}
+
 Run_Cox <- function(X, y, status, Z = NULL,
                     L, max.iter, min.iter, max.eps, susie_para,
                     verbose = TRUE, n_threads = 1,
                     ridge = 1e-6,
                     L.init = 1,
-                    refit_noncs = TRUE,
                     noncs_var = 0.1,
                     noncs_max_abs_cor = 0.9,
                     suff_block_size = 10000L) {
@@ -39,9 +111,6 @@ Run_Cox <- function(X, y, status, Z = NULL,
     colnames(ZI)[1] = "Intercept"
   }
 
-  # Survival outcome
-  surv_y = survival::Surv(y, status)
-
   # ============================================
   # Greedy low-dimensional Cox warm start
   # ============================================
@@ -59,7 +128,6 @@ Run_Cox <- function(X, y, status, Z = NULL,
   beta = rep(0, p)
   beta_prev = beta
   alpha_prev = alpha * 0
-  early_no_cs <- FALSE
   XCS <- NULL
 
   # ============================================
@@ -141,35 +209,28 @@ Run_Cox <- function(X, y, status, Z = NULL,
     cs_indices = sort(cs_indices)
 
     if (length(cs_indices) == 0) {
-      if (iter <= min.iter) {
-        noncs_res <- build_no_cs_noncs_refit_term(
-          X, fitX, cor_design = Z,
-          noncs_max_abs_cor = noncs_max_abs_cor
-        )
-        if (is.null(noncs_res)) {
-          early_no_cs <- TRUE
-          if (verbose) {
-            cat("No credible set detected; returning current no-CS fit.\n")
-          }
-          break
+      noncs_res <- build_no_cs_noncs_refit_term(
+        X, fitX, cor_design = Z,
+        noncs_max_abs_cor = noncs_max_abs_cor
+      )
+      if (is.null(noncs_res)) {
+        XCS <- NULL
+        XCS_refit <- NULL
+        if (verbose) {
+          cat("No credible set detected; continuing the outer refit without an X term.\n")
         }
+      } else {
         XCS <- matrix(noncs_res, ncol = 1)
-        colnames(XCS) <- "Main_CS_noncs"
+        colnames(XCS) <- "Main_noncs_res"
         XCS <- as.matrix(XCS)
         XCS_refit <- XCS
-      } else {
-        early_no_cs <- TRUE
-        if (verbose) {
-          cat("No credible set detected; returning current no-CS fit.\n")
-        }
-        break
       }
     } else {
 
     Alpha_filtered <- fitX$alpha * 0
     for (i in cs_indices) {
       vars_in_cs_i <- CSdt$variable[CSdt$cs == i]
-      Alpha_filtered[i, vars_in_cs_i] <- fitX$alpha[i, vars_in_cs_i]
+      Alpha_filtered[i, vars_in_cs_i] <- fitX$alpha[i, vars_in_cs_i] / sum(fitX$alpha[i, vars_in_cs_i])
     }
 
     # Align within-CS SNP directions while preserving PIP weights.
@@ -184,29 +245,24 @@ Run_Cox <- function(X, y, status, Z = NULL,
     colnames(XCS) <- paste0("Main_CS", cs_indices)
     XCS <- as.matrix(XCS)
     XCS_refit <- XCS
-    if (isTRUE(refit_noncs)) {
-      noncs_term <- build_noncs_refit_term(
-        X = X, fitX = fitX, CSdt = CSdt, cs_indices = cs_indices,
-        XCS = XCS, noncs_var = noncs_var,
-        noncs_max_abs_cor = noncs_max_abs_cor, cor_design = Z
-      )
-      if (!is.null(noncs_term)) {
-        XCS_refit <- cbind(XCS_refit, Main_CS_noncs = noncs_term)
-      }
+    noncs_term <- build_noncs_refit_term(
+      X = X, fitX = fitX, CSdt = CSdt, cs_indices = cs_indices,
+      XCS = XCS, noncs_var = noncs_var,
+      noncs_max_abs_cor = noncs_max_abs_cor, cor_design = Z
+    )
+    if (!is.null(noncs_term)) {
+      XCS_refit <- cbind(XCS_refit, Main_noncs_res = noncs_term)
     }
     }
 
     # ============================================
     # Refit Cox with selected credible sets
     # ============================================
-    if (ncol(Z) == 0) {
-      Data = data.frame(XCS_refit)
-    } else {
-      Data = cbind(Z, XCS_refit)
-      Data = as.data.frame(Data)
-    }
-
-    fit_final = survival::coxph(surv_y ~ ., data = Data, ties = "breslow")
+    penalty_names <- grep("^(Main_CS[0-9]+|Main_noncs_res)$", colnames(XCS_refit), value = TRUE)
+    penalty_V <- .refit_penalty_variance(fitX, cs_indices, penalty_names)
+    fit_final <- .cox_fit_fixed_ridge(
+      y, status, Z, Xextra = XCS_refit, penalty_V = penalty_V
+    )
 
 
     # Extract covariate coefficients only
@@ -238,29 +294,13 @@ Run_Cox <- function(X, y, status, Z = NULL,
   # ============================================
   # Post-processing
   # ============================================
-  if (early_no_cs) {
-    MainIndex <- Identifying_MainEffect(fitX, colnames(X))
-    G <- summary(fit_final)$coefficients
-    MainIndex <- safe_add_p(MainIndex, G)
-    fit_final$n_eff <- n_eff
-    fit_final <- clean_model_environment(fit_final)
-    return(list(
-      diagnostics = make_diagnostics(iter, g, run_start),
-      fitX = fitX,
-      fitJoint = fit_final,
-      main_index = MainIndex
-    ))
-  }
-
-  if (ncol(Z) == 0) {
-    Data = data.frame(XCS)
-  } else {
-    Data = cbind(Z, XCS)
-    Data = as.data.frame(Data)
-  }
-  fit_final = survival::coxph(surv_y ~ ., data = Data, ties = "breslow")
+  penalty_names <- grep("^(Main_CS[0-9]+|Main_noncs_res)$", colnames(XCS_refit), value = TRUE)
+  penalty_V <- .refit_penalty_variance(fitX, cs_indices, penalty_names)
+  fit_final <- .cox_fit_fixed_ridge(
+    y, status, Z, Xextra = XCS_refit, penalty_V = penalty_V
+  )
   MainIndex = Identifying_MainEffect(fitX, colnames(X))
-  G = summary(fit_final)$coefficients[, -2, drop = FALSE]
+  G = .cox_coef_table(fit_final)
   MainIndex <- safe_add_p(MainIndex, G)
   fit_final$n_eff <- n_eff
   fit_final <- clean_model_environment(fit_final)
@@ -281,8 +321,7 @@ Run_Cox <- function(X, y, status, Z = NULL,
     diagnostics = make_diagnostics(iter, g, run_start),
     fitX = fitX,
     fitJoint = fit_final,
-    main_index = MainIndex
+    discovery_summary = MainIndex
   )
-
   return(AA)
 }

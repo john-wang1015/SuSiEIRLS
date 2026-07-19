@@ -59,14 +59,17 @@ test_that("susie_para rejects structural and invalid arguments", {
   )
 })
 
-test_that("iteration controls retain warm-up behavior", {
-  para <- SuSiEIRLS:::.resolve_susie_para(list(
-    scaled_prior_variance = 1.5,
-    estimate_prior_variance = FALSE,
-    estimate_residual_variance = FALSE,
-    max_iter = 7,
-    coverage = 0.8
-  ))
+test_that("iteration controls retain package defaults", {
+  expect_warning(
+    para <- SuSiEIRLS:::.resolve_susie_para(list(
+      scaled_prior_variance = 1.5,
+      estimate_prior_variance = FALSE,
+      estimate_residual_variance = FALSE,
+      max_iter = 7,
+      coverage = 0.8
+    )),
+    "interpreted as an absolute"
+  )
   structural <- list(
     XtX = diag(2), Xty = c(1, 0), yty = 1, n = 10, L = 2
   )
@@ -76,10 +79,10 @@ test_that("iteration controls retain warm-up behavior", {
   expect_equal(warm$scaled_prior_variance, 2)
   expect_false(warm$standardize)
   expect_false(warm$estimate_prior_variance)
-  expect_true(warm$estimate_residual_variance)
-  expect_equal(warm$max_iter, 300)
-  expect_equal(warm$coverage, 0.9)
-  expect_equal(update$scaled_prior_variance, 1.5)
+  expect_false(warm$estimate_residual_variance)
+  expect_equal(warm$max_iter, 7)
+  expect_equal(warm$coverage, 0.8)
+  expect_equal(update$scaled_prior_variance, 1.5 / (1 / 9))
   expect_false(update$standardize)
   expect_false(update$estimate_prior_variance)
   expect_false(update$estimate_residual_variance)
@@ -97,6 +100,61 @@ test_that("iteration controls retain warm-up behavior", {
 
 test_that("outer iteration default is 10", {
   expect_equal(formals(SuSiE_IRLS)$max.iter, 10)
+})
+
+test_that("absolute prior variance is converted from current sufficient statistics", {
+  structural <- list(
+    XtX = diag(2), Xty = c(2, 0.5), yty = 120, n = 21, L = 2
+  )
+  fixed <- SuSiEIRLS:::.resolve_susie_para(list(
+    prior_variance = 0.7, estimate_prior_variance = FALSE, max_iter = 50
+  ))
+  warm <- SuSiEIRLS:::.susie_iteration_args(fixed, structural, 1, 2)
+  args <- SuSiEIRLS:::.susie_iteration_args(fixed, structural, 3, 2)
+
+  expect_equal(warm$scaled_prior_variance, 2)
+  expect_false(warm$estimate_prior_variance)
+  expect_equal(warm$max_iter, 50)
+  expect_equal(args$scaled_prior_variance, 0.7 / (120 / 20))
+  expect_false(args$estimate_prior_variance)
+  fit <- do.call(susieR::susie_ss, args)
+  expect_equal(as.numeric(fit$V), rep(0.7, 2), tolerance = 1e-8)
+
+  adaptive <- SuSiEIRLS:::.resolve_susie_para(list(
+    prior_variance = 0.7, estimate_prior_variance = TRUE
+  ))
+  initial <- SuSiEIRLS:::.susie_iteration_args(adaptive, structural, 1, 2)
+  adaptive_post <- SuSiEIRLS:::.susie_iteration_args(
+    adaptive, structural, 3, 2
+  )
+  expect_false(initial$estimate_prior_variance)
+  expect_equal(initial$scaled_prior_variance, 2)
+  expect_true(adaptive_post$estimate_prior_variance)
+  expect_equal(adaptive_post$scaled_prior_variance, 0.7 / 6)
+})
+
+test_that("prior scale validation is explicit and scaled warning occurs once", {
+  expect_error(
+    SuSiEIRLS:::.resolve_susie_para(list(
+      prior_variance = 1, scaled_prior_variance = 1
+    )),
+    "cannot contain both"
+  )
+  expect_warning(
+    scaled <- SuSiEIRLS:::.resolve_susie_para(
+      list(scaled_prior_variance = 1, estimate_prior_variance = FALSE)
+    ),
+    "interpreted as an absolute"
+  )
+  expect_equal(scaled$prior_variance, 1)
+  expect_false("scaled_prior_variance" %in% names(scaled))
+  structural <- list(
+    XtX = diag(2), Xty = c(1, 0), yty = 90, n = 10, L = 2
+  )
+  args <- SuSiEIRLS:::.susie_iteration_args(scaled, structural, 3, 2)
+  expect_equal(args$scaled_prior_variance, 0.1)
+  fit <- do.call(susieR::susie_ss, args)
+  expect_equal(as.numeric(fit$V), rep(1, 2), tolerance = 1e-8)
 })
 
 test_that("diagnostics use a one-row data frame", {

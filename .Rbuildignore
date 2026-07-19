@@ -9,6 +9,8 @@
 ^\.RData$
 ^\.Ruserdata$
 ^\.learnings$
+^\.codex$
+(^|[\\/])\.codex([\\/]|$)
 ^tmp$
 ^\.\.Rcheck$
 ^src/.*\.o$

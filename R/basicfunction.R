@@ -142,7 +142,30 @@ clean_coef <- function(x) {
     )
   }
 
-  valid <- names(formals(susieR::susie_ss))
+  if (all(c("prior_variance", "scaled_prior_variance") %in% nm)) {
+    stop(arg, " cannot contain both prior_variance and scaled_prior_variance.")
+  }
+  if ("prior_variance" %in% nm) {
+    V <- x$prior_variance
+    if (!is.numeric(V) || length(V) != 1L || !is.finite(V) || V <= 0) {
+      stop(arg, "$prior_variance must be a positive finite numeric scalar.")
+    }
+  }
+  if ("scaled_prior_variance" %in% nm) {
+    V <- x$scaled_prior_variance
+    if (!is.numeric(V) || length(V) != 1L || !is.finite(V) || V <= 0) {
+      stop(arg, "$scaled_prior_variance must be a positive finite numeric scalar.")
+    }
+    warning(
+      "scaled_prior_variance is interpreted as an absolute coefficient prior variance and re-scaled at every IRLS iteration; use prior_variance instead.",
+      call. = FALSE
+    )
+    x$prior_variance <- V
+    x$scaled_prior_variance <- NULL
+    nm <- names(x)
+  }
+
+  valid <- c(names(formals(susieR::susie_ss)), "prior_variance")
   unknown <- setdiff(nm, valid)
   if (length(unknown)) {
     stop(
@@ -159,14 +182,28 @@ clean_coef <- function(x) {
 
 .susie_iteration_args <- function(susie_para, structural, iter, min.iter) {
   args <- .susie_default_para()
-  if (iter > min.iter && length(susie_para)) {
-    args[names(susie_para)] <- susie_para
+  overrides <- susie_para[!vapply(susie_para, is.null, logical(1))]
+  if (iter <= min.iter && length(overrides)) {
+    warm_V_controls <- c(
+      "prior_variance", "scaled_prior_variance", "estimate_prior_variance"
+    )
+    overrides <- overrides[setdiff(names(overrides), warm_V_controls)]
   }
+  if (length(overrides)) args[names(overrides)] <- overrides
   if (iter <= min.iter) args$estimate_prior_variance <- FALSE
 
   epv <- args$estimate_prior_variance
   if (!is.logical(epv) || length(epv) != 1L || is.na(epv)) {
     stop("susie_para$estimate_prior_variance must be TRUE or FALSE.")
+  }
+  if ("prior_variance" %in% names(args)) {
+    y_scale <- structural$yty / (structural$n - 1)
+    if (!is.numeric(y_scale) || length(y_scale) != 1L ||
+        !is.finite(y_scale) || y_scale <= 0) {
+      stop("structural$yty / (structural$n - 1) must be positive and finite to convert prior_variance.")
+    }
+    args$scaled_prior_variance <- args$prior_variance / y_scale
+    args$prior_variance <- NULL
   }
   args[names(structural)] <- structural
   args
@@ -254,18 +291,18 @@ build_noncs_refit_term <- function(X, fitX, CSdt, cs_indices, XCS,
 build_no_cs_noncs_refit_term <- function(X, fitX, cor_design = NULL,
                                          noncs_max_abs_cor = 0.9) {
   if (is.null(fitX)) return(NULL)
+  if (!length(fitX$V)) return(NULL)
 
   beta_total <- clean_coef(stats::coef(fitX)[-1L])
-  if (!length(beta_total) || length(beta_total) != ncol(X)) return(NULL)
+  if (length(beta_total) != ncol(X)) {
+    stop("The SuSiE coefficient vector does not match ncol(X).")
+  }
 
   noncs_res <- as.numeric(CppMatrix::matrixVectorMultiply(X, beta_total))
-  if (length(noncs_res) != nrow(X)) return(NULL)
-  if (!is.finite(stats::sd(noncs_res)) || stats::sd(noncs_res) <= 1e-8) {
-    return(NULL)
+  if (length(noncs_res) != nrow(X)) {
+    stop("The no-CS rescue term does not match nrow(X).")
   }
-  if (!noncs_correlation_ok(
-    noncs_res, cor_design, max_abs_cor = noncs_max_abs_cor
-  )) return(NULL)
+  noncs_res[!is.finite(noncs_res)] <- 0
 
   noncs_res
 }
@@ -278,8 +315,14 @@ safe_add_p <- function(idx, Coefmat) {
   cs <- as.character(idx$CS)
   pos <- match(cs, rownames(Coefmat))
   p   <- rep(NA_real_, length(cs))
-  if (ncol(Coefmat) >= 4) {
-    p[!is.na(pos)] <- Coefmat[pos[!is.na(pos)], 4]
+  p_col <- match(
+    c("p", "pr(>|z|)", "pr(>|t|)"), tolower(colnames(Coefmat)),
+    nomatch = 0L
+  )
+  p_col <- p_col[p_col > 0L]
+  if (!length(p_col) && ncol(Coefmat) >= 4L) p_col <- 4L
+  if (length(p_col)) {
+    p[!is.na(pos)] <- Coefmat[pos[!is.na(pos)], p_col[1L]]
   }
 
   idx$Pvalue <- p
@@ -356,6 +399,7 @@ make_init_data <- function(y = NULL, Z = NULL, X = NULL, selected = integer(0)) 
 }
 
 fit_init_cox <- function(X, y, status, Z, selected) {
+  # The warm start precedes SuSiE and contains no Main_CS/non-CS refit terms.
   surv_y <- survival::Surv(y, status)
   Data <- make_init_data(Z = Z, X = X, selected = selected)
   if (ncol(Data) == 0L) {
